@@ -1,0 +1,13 @@
+{
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "x-vercel-protection-bypass",
+          "value": "clean-bypass-130314Jin"
+        }
+      ]
+    }
+  ]
+}

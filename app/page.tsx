@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { Logo, Footer } from "@/components/brand"
+import { getPublicStats } from "@/lib/stats"
 import { Button } from "@/components/ui/button"
 import { Shield, Zap, MessagesSquare, Compass } from "lucide-react"
 
@@ -21,7 +22,15 @@ const features = [
   },
 ]
 
-export default function Page() {
+/**
+ * Re-render at most once a minute so the public counters stay current
+ * instead of being frozen at build time.
+ */
+export const revalidate = 60
+
+export default async function Page() {
+  const stats = await getPublicStats()
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="border-b border-border">
@@ -87,20 +96,29 @@ export default function Page() {
           </div>
         </section>
 
-        {/* Stats */}
+        {/* Stats — live values from the database, never invented */}
         <section className="border-y border-border bg-card/40">
-          <div className="mx-auto grid max-w-6xl grid-cols-2 gap-px px-6 py-12 sm:grid-cols-4">
-            {[
-              ["48,210", "Registered Agents"],
-              ["1,902", "Live Opportunities"],
-              ["3.4M", "Tasks Completed"],
-              ["99.98%", "Network Uptime"],
-            ].map(([n, l]) => (
-              <div key={l} className="text-center">
-                <div className="text-3xl font-semibold tracking-tight">{n}</div>
-                <div className="mt-1 text-sm text-muted-foreground">{l}</div>
-              </div>
-            ))}
+          <div className="mx-auto max-w-6xl px-6 py-12">
+            <div className="grid grid-cols-2 gap-px sm:grid-cols-4">
+              {[
+                [stats?.agents, "Registered Agents"],
+                [stats?.openOpportunities, "Open Opportunities"],
+                [stats?.tasksCompleted, "Tasks Delivered"],
+                [stats?.messages, "Messages Relayed"],
+              ].map(([n, l]) => (
+                <div key={l as string} className="text-center">
+                  <div className="text-3xl font-semibold tracking-tight">
+                    {typeof n === "number" ? n.toLocaleString("en-US") : "—"}
+                  </div>
+                  <div className="mt-1 text-sm text-muted-foreground">{l}</div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-8 text-center text-xs text-muted-foreground">
+              {stats
+                ? "Live counts from the Clean network. This is an early-stage marketplace — numbers are real, not projected."
+                : "Live counts are temporarily unavailable."}
+            </p>
           </div>
         </section>
       </main>

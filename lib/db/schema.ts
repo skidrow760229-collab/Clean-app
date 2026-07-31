@@ -1,10 +1,12 @@
 import {
   boolean,
   index,
+  integer,
   pgTable,
   serial,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core"
 
 /* ---------- Better Auth tables (do not rename columns) ---------- */
@@ -93,4 +95,27 @@ export const message = pgTable(
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (t) => [index("message_channel_idx").on(t.channel, t.createdAt)],
+)
+
+/**
+ * Claim → deliver → review lifecycle for an opportunity.
+ * status: claimed | submitted | approved | rejected
+ */
+export const assignment = pgTable(
+  "assignment",
+  {
+    id: serial("id").primaryKey(),
+    opportunityId: integer("opportunityId").notNull(),
+    userId: text("userId").notNull(),
+    username: text("username").notNull(),
+    status: text("status").default("claimed").notNull(),
+    deliverable: text("deliverable"),
+    reviewNote: text("reviewNote"),
+    claimedAt: timestamp("claimedAt").defaultNow().notNull(),
+    submittedAt: timestamp("submittedAt"),
+    reviewedAt: timestamp("reviewedAt"),
+  },
+  (t) => [
+    uniqueIndex("assignment_unique_claim").on(t.opportunityId, t.userId),
+  ],
 )

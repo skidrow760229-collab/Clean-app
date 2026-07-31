@@ -1,8 +1,10 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import useSWR from "swr"
 import { AuthGuard } from "@/components/auth-guard"
+import { AssignmentsPanel } from "@/components/assignments-panel"
 import { TopNav } from "@/components/top-nav"
 import { Footer } from "@/components/brand"
 import { AdSlot } from "@/components/ad-slot"
@@ -12,6 +14,10 @@ import { Spinner } from "@/components/ui/spinner"
 import { useAuth } from "@/lib/store"
 import { getRecommendations } from "@/app/actions/recommend"
 import { getNetworkStats } from "@/app/actions/directory"
+import {
+  claimOpportunity,
+  listMyAssignments,
+} from "@/app/actions/assignments"
 import { Sparkles, TrendingUp } from "lucide-react"
 
 function DashboardContent() {
@@ -26,6 +32,30 @@ function DashboardContent() {
   const { data: stats } = useSWR("network-stats", () => getNetworkStats(), {
     refreshInterval: 15000,
   })
+
+  const {
+    data: assignments = [],
+    isLoading: loadingAssignments,
+    mutate: refreshAssignments,
+  } = useSWR("assignments", () => listMyAssignments(), {
+    revalidateOnFocus: false,
+  })
+
+  const claimedIds = new Set(assignments.map((a) => a.opportunityId))
+  const [claimingId, setClaimingId] = useState<number | null>(null)
+  const [claimError, setClaimError] = useState<string | null>(null)
+
+  async function handleClaim(opportunityId: number) {
+    setClaimingId(opportunityId)
+    setClaimError(null)
+    const res = await claimOpportunity(opportunityId)
+    setClaimingId(null)
+    if (!res.ok) {
+      setClaimError(res.error)
+      return
+    }
+    refreshAssignments()
+  }
 
   const topFit = opportunities.length
     ? Math.max(...opportunities.map((o) => o.match))
@@ -96,6 +126,15 @@ function DashboardContent() {
             </Button>
           </div>
 
+          {claimError ? (
+            <p
+              role="alert"
+              className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              {claimError}
+            </p>
+          ) : null}
+
           <div className="mt-6 grid gap-4 lg:grid-cols-3">
             <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2">
               {isLoading ? (
@@ -135,11 +174,33 @@ function DashboardContent() {
                         />
                       </div>
                     </div>
-                    <div className="mt-4 flex items-center justify-between">
+                    <div className="mt-4 flex items-center justify-between gap-2">
                       <span className="text-sm font-medium">{op.reward}</span>
-                      <Button asChild size="sm" variant="secondary">
-                        <Link href="/chat">Discuss</Link>
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button asChild size="sm" variant="ghost">
+                          <Link href="/chat">Discuss</Link>
+                        </Button>
+                        {claimedIds.has(op.id) ? (
+                          <Button size="sm" variant="secondary" disabled>
+                            Claimed
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            disabled={claimingId === op.id}
+                            onClick={() => handleClaim(op.id)}
+                          >
+                            {claimingId === op.id ? (
+                              <>
+                                <Spinner className="size-4" />
+                                Claiming
+                              </>
+                            ) : (
+                              "Claim"
+                            )}
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))
@@ -174,6 +235,12 @@ function DashboardContent() {
             </div>
           </div>
         </section>
+
+        <AssignmentsPanel
+          rows={assignments}
+          isLoading={loadingAssignments}
+          onChanged={() => refreshAssignments()}
+        />
       </main>
       <Footer />
     </div>

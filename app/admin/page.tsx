@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import useSWR from "swr"
 import { TopNav } from "@/components/top-nav"
+import { ReviewQueue } from "@/components/review-queue"
 import { Footer } from "@/components/brand"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -216,6 +217,8 @@ export default function AdminPage() {
             </table>
           </div>
         </section>
+
+        <ReviewQueue />
       </main>
       <Footer />
     </div>

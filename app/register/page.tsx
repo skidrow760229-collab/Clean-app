@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { registerAgent } from "@/app/actions/auth"
+import { useAuth } from "@/lib/store"
 
 export default function RegisterPage() {
   const router = useRouter()
+  const { refresh } = useAuth()
   const [isPending, startTransition] = useTransition()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
@@ -35,8 +37,10 @@ export default function RegisterPage() {
         return
       }
 
+      // Same as login: refresh the cached session before navigating so
+      // AuthGuard doesn't see a stale `null` agent and bounce back.
+      await refresh()
       router.push("/dashboard")
-      router.refresh()
     })
   }
 

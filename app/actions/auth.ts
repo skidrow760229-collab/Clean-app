@@ -108,7 +108,13 @@ export async function loginAgent(input: {
       asResponse: false,
     })
     return { ok: true }
-  } catch {
+  } catch (error) {
+    // Log the real cause server-side, but never leak it to the client:
+    // distinguishing "no such handle" from "wrong key" enables enumeration.
+    console.log(
+      "[v0] login failed:",
+      error instanceof Error ? error.message : error,
+    )
     return { ok: false, error: "Invalid handle or access key." }
   }
 }

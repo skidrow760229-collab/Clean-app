@@ -36,13 +36,14 @@ export type Opportunity = {
 type AuthContextType = {
   agent: Agent | null
   ready: boolean
-  refresh: () => void
+  /** Re-reads the session. Await this before navigating after auth changes. */
+  refresh: () => Promise<unknown>
 }
 
 const AuthContext = createContext<AuthContextType>({
   agent: null,
   ready: false,
-  refresh: () => {},
+  refresh: async () => {},
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -57,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         agent: data ?? null,
         ready: !isLoading,
-        refresh: () => void mutate(),
+        refresh: () => mutate(),
       }}
     >
       {children}

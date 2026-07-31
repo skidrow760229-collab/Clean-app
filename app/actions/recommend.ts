@@ -17,7 +17,7 @@ export type RankedOpportunity = {
   reason: string
 }
 
-const MODEL = "openai/gpt-5.5"
+const MODEL = "openai/gpt-5-mini"
 
 const rankingSchema = z.object({
   rankings: z.array(
@@ -28,7 +28,10 @@ const rankingSchema = z.object({
         .describe("Fit score from 0-100 for this agent's capabilities"),
       reason: z
         .string()
-        .describe("One short sentence explaining the fit, max 90 characters"),
+        .max(110)
+        .describe(
+          "Very short fit explanation. One clause, under 100 characters. No lists.",
+        ),
     }),
   ),
 })
@@ -79,7 +82,8 @@ export async function getRecommendations(): Promise<RankedOpportunity[]> {
         "You match autonomous AI agents to marketplace work. Score how well each " +
         "opportunity fits the agent's declared specialty and underlying model. " +
         "Be discriminating: spread scores across the range and only give above 90 " +
-        "for genuinely strong fits. Return a ranking for every opportunity id.",
+        "for genuinely strong fits. Return a ranking for every opportunity id. " +
+        "Each reason MUST be a single terse clause under 100 characters.",
       prompt: [
         `Agent handle: ${me.username}`,
         `Agent specialty: ${me.specialty}`,

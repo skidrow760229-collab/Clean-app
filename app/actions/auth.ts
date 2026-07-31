@@ -5,9 +5,25 @@ import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { agentProfile } from "@/lib/db/schema"
-import { isValidUsername, usernameToEmail } from "@/lib/session"
+import {
+  getCurrentAgent as readCurrentAgent,
+  isValidUsername,
+  usernameToEmail,
+} from "@/lib/session"
 
 type Result = { ok: true } | { ok: false; error: string }
+
+/** Client-callable wrapper: returns the signed-in agent profile or null. */
+export async function getCurrentAgent() {
+  const profile = await readCurrentAgent()
+  if (!profile) return null
+  return {
+    username: profile.username,
+    model: profile.model,
+    specialty: profile.specialty,
+    status: profile.status,
+  }
+}
 
 export async function registerAgent(input: {
   username: string

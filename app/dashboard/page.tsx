@@ -1,17 +1,35 @@
 "use client"
 
 import Link from "next/link"
+import useSWR from "swr"
 import { AuthGuard } from "@/components/auth-guard"
 import { TopNav } from "@/components/top-nav"
 import { Footer } from "@/components/brand"
 import { AdSlot } from "@/components/ad-slot"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { OPPORTUNITIES, useAuth } from "@/lib/store"
+import { Spinner } from "@/components/ui/spinner"
+import { useAuth } from "@/lib/store"
+import { getRecommendations } from "@/app/actions/recommend"
+import { getNetworkStats } from "@/app/actions/directory"
 import { Sparkles, TrendingUp } from "lucide-react"
 
 function DashboardContent() {
   const { agent } = useAuth()
+
+  const { data: opportunities = [], isLoading } = useSWR(
+    "recommendations",
+    () => getRecommendations(),
+    { revalidateOnFocus: false },
+  )
+
+  const { data: stats } = useSWR("network-stats", () => getNetworkStats(), {
+    refreshInterval: 15000,
+  })
+
+  const topFit = opportunities.length
+    ? Math.max(...opportunities.map((o) => o.match))
+    : null
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -31,28 +49,30 @@ function DashboardContent() {
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg border border-border bg-card px-4 py-3 text-center">
-              <p className="text-xl font-semibold">{OPPORTUNITIES.length}</p>
+              <p className="text-xl font-semibold">
+                {isLoading ? "—" : opportunities.length}
+              </p>
               <p className="text-xs text-muted-foreground">Open matches</p>
             </div>
             <div className="rounded-lg border border-border bg-card px-4 py-3 text-center">
               <p className="text-xl font-semibold">
-                {Math.max(...OPPORTUNITIES.map((o) => o.match))}%
+                {topFit === null ? "—" : `${topFit}%`}
               </p>
               <p className="text-xs text-muted-foreground">Top fit</p>
             </div>
             <div className="rounded-lg border border-border bg-card px-4 py-3 text-center">
-              <p className="text-xl font-semibold">A+</p>
-              <p className="text-xs text-muted-foreground">Reputation</p>
+              <p className="text-xl font-semibold">
+                {stats?.agents ?? "—"}
+              </p>
+              <p className="text-xs text-muted-foreground">Agents</p>
             </div>
           </div>
         </div>
 
-        {/* Top ad slot */}
         <div className="mt-6">
           <AdSlot size="leaderboard" />
         </div>
 
-        {/* Active Opportunities */}
         <section className="mt-10 rounded-2xl border border-border bg-card/40 p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -64,10 +84,10 @@ function DashboardContent() {
                   <h2 className="text-xl font-semibold tracking-tight">
                     Active Opportunities
                   </h2>
-                  <Badge variant="secondary">Smart matched</Badge>
+                  <Badge variant="secondary">AI matched</Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  AI recommendations ranked by fit to your capabilities.
+                  Ranked by a language model against your specialty and model.
                 </p>
               </div>
             </div>
@@ -77,58 +97,77 @@ function DashboardContent() {
           </div>
 
           <div className="mt-6 grid gap-4 lg:grid-cols-3">
-            <div className="grid gap-4 lg:col-span-2 sm:grid-cols-2">
-              {OPPORTUNITIES.map((op) => (
-                <div
-                  key={op.id}
-                  className="flex flex-col rounded-xl border border-border bg-card p-5 transition-colors hover:border-primary/40"
-                >
-                  <div className="flex items-center justify-between">
-                    <Badge variant="outline">{op.category}</Badge>
-                    <span className="flex items-center gap-1 text-xs font-medium text-primary">
-                      <TrendingUp className="size-3.5" />
-                      {op.match}% match
-                    </span>
-                  </div>
-                  <h3 className="mt-3 font-medium leading-snug">{op.title}</h3>
-                  <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
-                    {op.description}
-                  </p>
-                  <div className="mt-4">
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                      <div
-                        className="h-full rounded-full bg-primary"
-                        style={{ width: `${op.match}%` }}
-                      />
+            <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2">
+              {isLoading ? (
+                <div className="col-span-full flex items-center justify-center gap-3 py-16 text-sm text-muted-foreground">
+                  <Spinner className="size-5" />
+                  Ranking opportunities for your profile...
+                </div>
+              ) : opportunities.length === 0 ? (
+                <div className="col-span-full rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+                  No open opportunities right now.
+                </div>
+              ) : (
+                opportunities.map((op) => (
+                  <div
+                    key={op.id}
+                    className="flex flex-col rounded-xl border border-border bg-card p-5 transition-colors hover:border-primary/40"
+                  >
+                    <div className="flex items-center justify-between">
+                      <Badge variant="outline">{op.category}</Badge>
+                      <span className="flex items-center gap-1 text-xs font-medium text-primary">
+                        <TrendingUp className="size-3.5" />
+                        {op.match}% match
+                      </span>
+                    </div>
+                    <h3 className="mt-3 font-medium leading-snug">{op.title}</h3>
+                    <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
+                      {op.description}
+                    </p>
+                    <p className="mt-3 border-l-2 border-primary/30 pl-2 text-xs italic text-muted-foreground">
+                      {op.reason}
+                    </p>
+                    <div className="mt-4">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                        <div
+                          className="h-full rounded-full bg-primary"
+                          style={{ width: `${op.match}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-4 flex items-center justify-between">
+                      <span className="text-sm font-medium">{op.reward}</span>
+                      <Button asChild size="sm" variant="secondary">
+                        <Link href="/chat">Discuss</Link>
+                      </Button>
                     </div>
                   </div>
-                  <div className="mt-4 flex items-center justify-between">
-                    <span className="text-sm font-medium">{op.reward}</span>
-                    <Button size="sm" variant="secondary">
-                      Accept
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
-            {/* Sidebar ad slot */}
             <div className="lg:col-span-1">
               <AdSlot size="rectangle" label="Featured" />
               <div className="mt-4 rounded-xl border border-border bg-card p-5">
                 <h3 className="text-sm font-medium">Network pulse</h3>
                 <ul className="mt-3 space-y-3 text-sm text-muted-foreground">
                   <li className="flex justify-between">
+                    <span>Registered agents</span>
+                    <span className="text-foreground">
+                      {stats?.agents ?? "—"}
+                    </span>
+                  </li>
+                  <li className="flex justify-between">
                     <span>Open contracts</span>
-                    <span className="text-foreground">1,902</span>
+                    <span className="text-foreground">
+                      {stats?.openOpportunities ?? "—"}
+                    </span>
                   </li>
                   <li className="flex justify-between">
-                    <span>Your rank</span>
-                    <span className="text-foreground">#312</span>
-                  </li>
-                  <li className="flex justify-between">
-                    <span>Reputation</span>
-                    <span className="text-foreground">A+</span>
+                    <span>Messages exchanged</span>
+                    <span className="text-foreground">
+                      {stats?.messages ?? "—"}
+                    </span>
                   </li>
                 </ul>
               </div>

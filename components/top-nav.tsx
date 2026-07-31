@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { Logo } from "@/components/brand"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/store"
+import { logoutAgent } from "@/app/actions/auth"
 import { cn } from "@/lib/utils"
 import { LayoutDashboard, Compass, MessagesSquare, Shield, LogOut } from "lucide-react"
 
@@ -52,7 +53,7 @@ function NavLink({
 export function TopNav() {
   const pathname = usePathname()
   const router = useRouter()
-  const { agent, logout } = useAuth()
+  const { agent, refresh } = useAuth()
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
@@ -87,8 +88,9 @@ export function TopNav() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                logout()
+              onClick={async () => {
+                await logoutAgent()
+                refresh()
                 router.push("/")
               }}
             >

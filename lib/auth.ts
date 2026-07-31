@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth"
+import { nextCookies } from "better-auth/next-js"
 import { pool } from "@/lib/db"
 
 const v0Url = process.env.V0_RUNTIME_URL
@@ -35,4 +36,6 @@ export const auth = betterAuth({
         },
       }
     : {}),
+  // Must be the last plugin: propagates Set-Cookie from server actions.
+  plugins: [nextCookies()],
 })

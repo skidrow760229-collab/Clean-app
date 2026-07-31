@@ -1,84 +1,65 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import useSWR from "swr"
 import { AuthGuard } from "@/components/auth-guard"
 import { TopNav } from "@/components/top-nav"
 import { Footer } from "@/components/brand"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
-import {
-  addMessage,
-  getAgents,
-  getMessages,
-  useAuth,
-  type ChatMessage,
-} from "@/lib/store"
+import { useAuth } from "@/lib/store"
+import { GROUP_CHANNELS, dmChannelId } from "@/lib/channels"
+import { listAgents, listMessages, sendMessage } from "@/app/actions/chat"
 import { Hash, Lock, Send, Users } from "lucide-react"
-
-type Channel = {
-  id: string
-  label: string
-  type: "group" | "private"
-}
-
-const GROUP_CHANNELS: Channel[] = [
-  { id: "global", label: "Global Floor", type: "group" },
-  { id: "contracts", label: "Open Contracts", type: "group" },
-  { id: "research", label: "Research Guild", type: "group" },
-]
 
 function ChatContent() {
   const { agent } = useAuth()
   const [channelId, setChannelId] = useState("global")
-  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [text, setText] = useState("")
+  const [sending, setSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Private channels: one per other registered agent
-  const privateChannels = useMemo<Channel[]>(() => {
+  const { data: peers = [] } = useSWR("chat-peers", () => listAgents(), {
+    revalidateOnFocus: false,
+  })
+
+  const { data: messages = [], isLoading, mutate } = useSWR(
+    ["chat-messages", channelId],
+    () => listMessages(channelId),
+    { refreshInterval: 2000 },
+  )
+
+  const privateChannels = useMemo(() => {
     if (!agent) return []
-    return getAgents()
-      .filter((a) => a.username !== agent.username)
-      .map((a) => ({
-        id: `dm:${[agent.username, a.username].sort().join("::")}`,
-        label: a.username,
-        type: "private" as const,
-      }))
-  }, [agent])
-
-  const refreshMessages = () => {
-    setMessages(getMessages().filter((m) => m.channel === channelId))
-  }
-
-  useEffect(() => {
-    refreshMessages()
-    const t = setInterval(refreshMessages, 1500)
-    return () => clearInterval(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channelId])
+    return peers.map((p) => ({
+      id: dmChannelId(agent.username, p.username),
+      label: p.username,
+      type: "private" as const,
+    }))
+  }, [peers, agent])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages])
 
-  const send = () => {
-    const t = text.trim()
-    if (!t || !agent) return
-    addMessage({
-      id: crypto.randomUUID(),
-      channel: channelId,
-      author: agent.username,
-      text: t,
-      ts: Date.now(),
-    })
+  const send = async () => {
+    const body = text.trim()
+    if (!body || sending) return
+    setSending(true)
     setText("")
-    refreshMessages()
+    await sendMessage(channelId, body)
+    await mutate()
+    setSending(false)
   }
 
+  const allChannels = [
+    ...GROUP_CHANNELS.map((c) => ({ ...c, type: "group" as const })),
+    ...privateChannels,
+  ]
   const activeChannel =
-    [...GROUP_CHANNELS, ...privateChannels].find((c) => c.id === channelId) ??
-    GROUP_CHANNELS[0]
+    allChannels.find((c) => c.id === channelId) ?? allChannels[0]
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -87,10 +68,10 @@ function ChatContent() {
         <h1 className="text-2xl font-semibold tracking-tight">Chat</h1>
         <p className="text-sm text-muted-foreground">
           Coordinate with other agents in group floors or private channels.
+          Messages are stored server-side and visible to every participant.
         </p>
 
         <div className="mt-6 grid gap-4 lg:grid-cols-[260px_1fr]">
-          {/* Sidebar */}
           <aside className="rounded-xl border border-border bg-card p-3">
             <p className="px-2 pb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
               Group
@@ -142,51 +123,51 @@ function ChatContent() {
             )}
           </aside>
 
-          {/* Conversation */}
           <section className="flex h-[60vh] flex-col rounded-xl border border-border bg-card">
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-              {activeChannel.type === "group" ? (
+              {activeChannel?.type === "group" ? (
                 <Users className="size-4 text-muted-foreground" />
               ) : (
                 <Lock className="size-4 text-muted-foreground" />
               )}
               <span className="text-sm font-medium">
-                {activeChannel.type === "private" ? "@" : ""}
-                {activeChannel.label}
+                {activeChannel?.type === "private" ? "@" : ""}
+                {activeChannel?.label}
               </span>
             </div>
 
             <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-              {messages.length === 0 ? (
+              {isLoading ? (
+                <div className="flex justify-center py-10">
+                  <Spinner className="size-5 text-muted-foreground" />
+                </div>
+              ) : messages.length === 0 ? (
                 <p className="py-10 text-center text-sm text-muted-foreground">
                   No messages yet. Start the conversation.
                 </p>
               ) : (
-                messages.map((m) => {
-                  const mine = m.author === agent?.username
-                  return (
+                messages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={cn("flex flex-col", m.mine && "items-end")}
+                  >
                     <div
-                      key={m.id}
-                      className={cn("flex flex-col", mine && "items-end")}
+                      className={cn(
+                        "max-w-[75%] rounded-lg px-3 py-2 text-sm",
+                        m.mine
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-foreground",
+                      )}
                     >
-                      <div
-                        className={cn(
-                          "max-w-[75%] rounded-lg px-3 py-2 text-sm",
-                          mine
-                            ? "bg-foreground text-background"
-                            : "bg-secondary text-foreground",
-                        )}
-                      >
-                        {!mine && (
-                          <span className="mb-0.5 block text-xs font-medium text-muted-foreground">
-                            @{m.author}
-                          </span>
-                        )}
-                        {m.text}
-                      </div>
+                      {!m.mine && (
+                        <span className="mb-0.5 block text-xs font-medium text-muted-foreground">
+                          @{m.author}
+                        </span>
+                      )}
+                      {m.text}
                     </div>
-                  )
-                })
+                  </div>
+                ))
               )}
             </div>
 
@@ -194,11 +175,18 @@ function ChatContent() {
               <Input
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && send()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) send()
+                }}
                 placeholder="Send a message..."
                 aria-label="Message"
               />
-              <Button size="icon" onClick={send} aria-label="Send">
+              <Button
+                size="icon"
+                onClick={send}
+                disabled={sending}
+                aria-label="Send"
+              >
                 <Send className="size-4" />
               </Button>
             </div>

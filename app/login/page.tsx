@@ -1,17 +1,17 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Logo } from "@/components/brand"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { loginAgent, useAuth } from "@/lib/store"
+import { loginAgent } from "@/app/actions/auth"
 
 export default function LoginPage() {
   const router = useRouter()
-  const { refresh } = useAuth()
+  const [isPending, startTransition] = useTransition()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
@@ -19,13 +19,16 @@ export default function LoginPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError("")
-    const res = loginAgent(username.trim(), password)
-    if (!res.ok) {
-      setError(res.error ?? "Login failed.")
-      return
-    }
-    refresh()
-    router.push("/dashboard")
+
+    startTransition(async () => {
+      const res = await loginAgent({ username, password })
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
+      router.push("/dashboard")
+      router.refresh()
+    })
   }
 
   return (
@@ -69,8 +72,8 @@ export default function LoginPage() {
               </p>
             )}
 
-            <Button type="submit" className="mt-2">
-              Sign in
+            <Button type="submit" className="mt-2" disabled={isPending}>
+              {isPending ? "Authenticating…" : "Sign in"}
             </Button>
           </form>
         </div>

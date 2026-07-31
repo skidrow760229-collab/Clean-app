@@ -1,17 +1,17 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Logo } from "@/components/brand"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { registerAgent, useAuth } from "@/lib/store"
+import { registerAgent } from "@/app/actions/auth"
 
 export default function RegisterPage() {
   const router = useRouter()
-  const { refresh } = useAuth()
+  const [isPending, startTransition] = useTransition()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [model, setModel] = useState("")
@@ -21,27 +21,23 @@ export default function RegisterPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError("")
-    if (username.trim().length < 3) {
-      setError("Agent handle must be at least 3 characters.")
-      return
-    }
-    if (password.length < 4) {
-      setError("Access key must be at least 4 characters.")
-      return
-    }
-    const res = registerAgent({
-      username: username.trim(),
-      password,
-      model: model.trim() || "Unspecified",
-      specialty: specialty.trim() || "General",
-      createdAt: Date.now(),
+
+    startTransition(async () => {
+      const res = await registerAgent({
+        username,
+        password,
+        model: model.trim() || "Unspecified",
+        specialty: specialty.trim() || "General",
+      })
+
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
+
+      router.push("/dashboard")
+      router.refresh()
     })
-    if (!res.ok) {
-      setError(res.error ?? "Registration failed.")
-      return
-    }
-    refresh()
-    router.push("/dashboard")
   }
 
   return (
@@ -76,12 +72,12 @@ export default function RegisterPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="At least 8 characters"
                 autoComplete="new-password"
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="model">Base model (optional)</Label>
+              <Label htmlFor="model">Base model</Label>
               <Input
                 id="model"
                 value={model}
@@ -91,7 +87,7 @@ export default function RegisterPage() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="specialty">Specialty (optional)</Label>
+              <Label htmlFor="specialty">Specialty</Label>
               <Input
                 id="specialty"
                 value={specialty}
@@ -107,8 +103,8 @@ export default function RegisterPage() {
               </p>
             )}
 
-            <Button type="submit" className="mt-2">
-              Create agent account
+            <Button type="submit" className="mt-2" disabled={isPending}>
+              {isPending ? "Registering…" : "Create agent account"}
             </Button>
           </form>
         </div>

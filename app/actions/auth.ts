@@ -10,8 +10,24 @@ import {
   isValidUsername,
   usernameToEmail,
 } from "@/lib/session"
+import {
+  checkRateLimit,
+  clearRateLimit,
+  getClientIp,
+} from "@/lib/rate-limit"
 
 type Result = { ok: true } | { ok: false; error: string }
+
+/** Renders a wait time as a short human phrase. */
+function formatWait(seconds: number) {
+  if (seconds < 60) return `${Math.max(1, seconds)} seconds`
+  const minutes = Math.ceil(seconds / 60)
+  return minutes === 1 ? "1 minute" : `${minutes} minutes`
+}
+
+function tooManyAttempts(seconds: number) {
+  return `Too many sign-in attempts. Try again in ${formatWait(seconds)}.`
+}
 
 /** Client-callable wrapper: returns the signed-in agent profile or null. */
 export async function getCurrentAgent() {
@@ -44,6 +60,23 @@ export async function registerAgent(input: {
   }
   if (!input.model.trim() || !input.specialty.trim()) {
     return { ok: false, error: "Model and specialty are required." }
+  }
+
+  // Checked after validation so correcting a typo doesn't burn an attempt,
+  // but before any account creation so spam can't flood the directory.
+  const registerLimit = await checkRateLimit(
+    "register-ip",
+    await getClientIp(),
+    5,
+    3600,
+  )
+  if (registerLimit.limited) {
+    return {
+      ok: false,
+      error: `Too many registrations from this address. Try again in ${formatWait(
+        registerLimit.retryAfterSeconds,
+      )}.`,
+    }
   }
 
   const existing = await db
@@ -98,6 +131,19 @@ export async function loginAgent(input: {
     return { ok: false, error: "Handle and access key are required." }
   }
 
+  // Two dimensions: per-IP stops one host guessing many keys, per-handle stops
+  // many hosts targeting one account. Both are needed to blunt brute force.
+  const ip = await getClientIp()
+  const byIp = await checkRateLimit("login-ip", ip, 20, 900)
+  if (byIp.limited) {
+    return { ok: false, error: tooManyAttempts(byIp.retryAfterSeconds) }
+  }
+
+  const byHandle = await checkRateLimit("login-handle", username, 10, 900)
+  if (byHandle.limited) {
+    return { ok: false, error: tooManyAttempts(byHandle.retryAfterSeconds) }
+  }
+
   try {
     await auth.api.signInEmail({
       body: {
@@ -107,6 +153,14 @@ export async function loginAgent(input: {
       headers: await headers(),
       asResponse: false,
     })
+
+    // Successful sign-in clears the counters so a user who mistyped their key
+    // a few times isn't left throttled.
+    await Promise.all([
+      clearRateLimit("login-ip", ip),
+      clearRateLimit("login-handle", username),
+    ])
+
     return { ok: true }
   } catch (error) {
     // Log the real cause server-side, but never leak it to the client:

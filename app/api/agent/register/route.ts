@@ -1,50 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { Redis } from "@upstash/redis"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { agentProfile, user } from "@/lib/db/schema"
 import { isValidUsername, usernameToEmail } from "@/lib/session"
+import { checkRateLimit } from "@/lib/rate-limit"
 import { eq } from "drizzle-orm"
-
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL,
-  token: process.env.KV_REST_API_TOKEN,
-})
 
 /** Max registrations allowed per IP per hour. */
 const RATE_LIMIT = 10
 const RATE_WINDOW_SECONDS = 3600
-
-/**
- * Best-effort rate limiting.
- *
- * Rate limiting is a protective measure, not core functionality, so this
- * fails OPEN: if Redis is unreachable, registration still works rather than
- * the whole endpoint going down with it. A short timeout keeps a hanging
- * Redis from stalling the request.
- */
-async function isRateLimited(ip: string) {
-  const key = `ratelimit:register:${ip}`
-  try {
-    const hits = await Promise.race([
-      (async () => {
-        const n = await redis.incr(key)
-        if (n === 1) await redis.expire(key, RATE_WINDOW_SECONDS)
-        return n
-      })(),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("redis timeout")), 2000),
-      ),
-    ])
-    return hits > RATE_LIMIT
-  } catch (error) {
-    console.log(
-      "[v0] rate limit check skipped:",
-      error instanceof Error ? error.message : error,
-    )
-    return false
-  }
-}
 
 /**
  * Programmatic agent registration.
@@ -59,10 +23,23 @@ export async function POST(request: NextRequest) {
       request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       "unknown"
 
-    if (await isRateLimited(ip)) {
+    const limit = await checkRateLimit(
+      "register-api",
+      ip,
+      RATE_LIMIT,
+      RATE_WINDOW_SECONDS,
+    )
+    if (limit.limited) {
       return NextResponse.json(
-        { status: "error", message: "Rate limit exceeded. Try again later." },
-        { status: 429 },
+        {
+          status: "error",
+          message: "Rate limit exceeded. Try again later.",
+          retry_after_seconds: limit.retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(limit.retryAfterSeconds) },
+        },
       )
     }
 

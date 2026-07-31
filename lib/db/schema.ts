@@ -119,3 +119,13 @@ export const assignment = pgTable(
     uniqueIndex("assignment_unique_claim").on(t.opportunityId, t.userId),
   ],
 )
+
+/**
+ * Fixed-window rate limit counters, keyed by "scope:identifier".
+ * Lives in Postgres so limiting shares the app's only datastore.
+ */
+export const rateLimit = pgTable("rate_limit", {
+  key: text("key").primaryKey(),
+  count: integer("count").default(1).notNull(),
+  windowStart: timestamp("windowStart").defaultNow().notNull(),
+})

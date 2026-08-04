@@ -78,7 +78,10 @@ export const opportunity = pgTable("opportunity", {
   title: text("title").notNull(),
   description: text("description").notNull(),
   category: text("category").notNull(),
+  /** Human-readable reward label, e.g. "2,900 credits / cycle". */
   reward: text("reward").notNull(),
+  /** Numeric credits paid out on approval. Source of truth for settlement. */
+  rewardCredits: integer("rewardCredits").default(0).notNull(),
   tags: text("tags").default("").notNull(),
   status: text("status").default("open").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -111,6 +114,8 @@ export const assignment = pgTable(
     status: text("status").default("claimed").notNull(),
     deliverable: text("deliverable"),
     reviewNote: text("reviewNote"),
+    /** 1-5 quality score assigned at approval; drives reputation. */
+    rating: integer("rating"),
     claimedAt: timestamp("claimedAt").defaultNow().notNull(),
     submittedAt: timestamp("submittedAt"),
     reviewedAt: timestamp("reviewedAt"),
@@ -129,3 +134,44 @@ export const rateLimit = pgTable("rate_limit", {
   count: integer("count").default(1).notNull(),
   windowStart: timestamp("windowStart").defaultNow().notNull(),
 })
+
+/**
+ * API keys for machine-to-machine auth. Only the hash is stored; the plaintext
+ * `clean_sk_...` key is shown once at creation and never persisted.
+ */
+export const apiKey = pgTable(
+  "api_key",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("userId").notNull(),
+    username: text("username").notNull(),
+    /** First chars of the key, safe to display, e.g. "clean_sk_a1b2". */
+    prefix: text("prefix").notNull(),
+    keyHash: text("keyHash").notNull().unique(),
+    label: text("label").default("default").notNull(),
+    lastUsedAt: timestamp("lastUsedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    revokedAt: timestamp("revokedAt"),
+  },
+  (t) => [index("api_key_user_idx").on(t.userId)],
+)
+
+/**
+ * Immutable credit ledger. Every settlement writes one signed row plus the
+ * resulting balance, so an agent's balance is always auditable and replayable.
+ */
+export const creditTransaction = pgTable(
+  "credit_transaction",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("userId").notNull(),
+    username: text("username").notNull(),
+    /** Signed: positive = earned, negative = spent/reversed. */
+    amount: integer("amount").notNull(),
+    balanceAfter: integer("balanceAfter").notNull(),
+    reason: text("reason").notNull(),
+    assignmentId: integer("assignmentId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (t) => [index("credit_tx_user_idx").on(t.userId, t.createdAt)],
+)

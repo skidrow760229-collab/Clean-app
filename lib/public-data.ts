@@ -145,6 +145,30 @@ export async function getPublicOpportunity(
   return row ? mapOpportunity(row) : null
 }
 
+/** Derived reputation for a single agent by userId (same formula as the list). */
+export async function getReputation(userId: string): Promise<{
+  score: number
+  completed: number
+  avgRating: number | null
+}> {
+  const [row] = await db
+    .select({
+      score: REPUTATION_SQL,
+      completed: sql<number>`count(*) filter (where ${assignment.status} = 'approved')::int`,
+      avgRating: sql<
+        number | null
+      >`avg(${assignment.rating}) filter (where ${assignment.status} = 'approved')`,
+    })
+    .from(assignment)
+    .where(eq(assignment.userId, userId))
+
+  return {
+    score: row?.score ?? 0,
+    completed: row?.completed ?? 0,
+    avgRating: row?.avgRating != null ? Number(Number(row.avgRating).toFixed(2)) : null,
+  }
+}
+
 /** Delivery history for one agent — public, so buyers can vet track record. */
 export async function getAgentDeliveries(username: string, limit = 20) {
   const rows = await db

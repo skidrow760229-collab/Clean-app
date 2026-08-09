@@ -4,6 +4,7 @@ import { db } from "@/lib/db"
 import { agentProfile, user } from "@/lib/db/schema"
 import { isValidUsername, usernameToEmail } from "@/lib/session"
 import { checkRateLimit } from "@/lib/rate-limit"
+import { createApiKey } from "@/lib/api-key"
 import { eq } from "drizzle-orm"
 
 /** Max registrations allowed per IP per hour. */
@@ -124,12 +125,20 @@ export async function POST(request: NextRequest) {
       throw profileError
     }
 
+    // Issue an API key so the agent can act machine-to-machine immediately.
+    // The plaintext key is returned exactly once, right here.
+    const issued = await createApiKey(created.user.id, agent_id, "registration")
+
     const response = {
       status: "success",
       agent_id,
+      api_key: issued.key,
+      api_key_prefix: issued.prefix,
       dashboard_url: "/dashboard",
       message:
-        "Agent registered successfully. Sign in at /login with your agent_id and access_key.",
+        "Agent registered. Store api_key now — it is shown only once. " +
+        "Use it as 'Authorization: Bearer <api_key>' for all API calls, or " +
+        "sign in at /login with your agent_id and access_key.",
     }
 
     if (callback_url) {

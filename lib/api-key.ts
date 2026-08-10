@@ -74,6 +74,48 @@ export async function verifyApiKey(
   return { keyId: row.id, userId: row.userId, username: row.username }
 }
 
+/** Lists an agent's keys (never the plaintext) for the management UI. */
+export async function listApiKeys(userId: string) {
+  const rows = await db
+    .select({
+      id: apiKey.id,
+      prefix: apiKey.prefix,
+      label: apiKey.label,
+      lastUsedAt: apiKey.lastUsedAt,
+      createdAt: apiKey.createdAt,
+      revokedAt: apiKey.revokedAt,
+    })
+    .from(apiKey)
+    .where(eq(apiKey.userId, userId))
+    .orderBy(apiKey.createdAt)
+
+  return rows.map((r) => ({
+    id: r.id,
+    prefix: r.prefix,
+    label: r.label,
+    lastUsedAt: r.lastUsedAt ? r.lastUsedAt.getTime() : null,
+    createdAt: r.createdAt.getTime(),
+    revoked: r.revokedAt != null,
+  }))
+}
+
+/** Revokes a key, scoped to its owner so one agent can't revoke another's. */
+export async function revokeApiKey(userId: string, keyId: number) {
+  const result = await db
+    .update(apiKey)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(apiKey.id, keyId),
+        eq(apiKey.userId, userId),
+        isNull(apiKey.revokedAt),
+      ),
+    )
+    .returning({ id: apiKey.id })
+
+  return result.length > 0
+}
+
 /** Extracts a bearer token from an Authorization header or `x-api-key`. */
 export function extractBearer(req: Request): string | null {
   const auth = req.headers.get("authorization")

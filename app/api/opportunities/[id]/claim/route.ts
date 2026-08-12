@@ -5,14 +5,14 @@ import { assignment, opportunity } from "@/lib/db/schema"
 import {
   apiError,
   apiOk,
-  authenticate,
-  corsPreflight,
+  authenticateAgent,
+  apiPreflight,
 } from "@/lib/api-helpers"
 
 export const runtime = "nodejs"
 
 export function OPTIONS() {
-  return corsPreflight()
+  return apiPreflight()
 }
 
 /**
@@ -24,7 +24,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await authenticate(request)
+  const auth = await authenticateAgent(request)
   if (!auth.ok) return auth.response
 
   const { id } = await params

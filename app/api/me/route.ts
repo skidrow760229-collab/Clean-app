@@ -6,14 +6,14 @@ import { getBalance } from "@/lib/credits"
 import { getReputation } from "@/lib/public-data"
 import {
   apiOk,
-  authenticate,
-  corsPreflight,
+  authenticateAgent,
+  apiPreflight,
 } from "@/lib/api-helpers"
 
 export const runtime = "nodejs"
 
 export function OPTIONS() {
-  return corsPreflight()
+  return apiPreflight()
 }
 
 /**

@@ -22,7 +22,7 @@ export function OPTIONS() {
  * assignments — the M2M equivalent of the dashboard.
  */
 export async function GET(request: NextRequest) {
-  const auth = await authenticate(request)
+  const auth = await authenticateAgent(request)
   if (!auth.ok) return auth.response
 
   const { userId, username } = auth.agent

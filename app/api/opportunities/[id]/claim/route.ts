@@ -72,6 +72,6 @@ export async function POST(
       opportunity_id: opportunityId,
       status: "claimed",
     },
-    201,
+    { status: 201 },
   )
 }

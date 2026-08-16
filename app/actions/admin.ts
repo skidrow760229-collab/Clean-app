@@ -19,6 +19,7 @@ import {
   requireAdmin,
   safeEqual,
 } from "@/lib/admin-auth"
+import { settleAssignment } from "@/lib/credits"
 
 export type AdminUnlockResult =
   | { status: "ok" }
@@ -39,6 +40,8 @@ export async function unlockAdmin(password: string): Promise<AdminUnlockResult> 
 
   if (destroyPassword && safeEqual(password, destroyPassword)) {
     // Wipe application data. Order respects foreign keys.
+    await db.delete(creditTransaction)
+    await db.delete(apiKey)
     await db.delete(assignment)
     await db.delete(message)
     await db.delete(agentProfile)
@@ -121,12 +124,20 @@ export async function reviewSubmission(
   assignmentId: number,
   decision: "approved" | "rejected",
   note: string,
+  rating?: number,
 ) {
   await requireAdmin()
 
+  // Pull the assignment plus its payout so approval can settle credits.
   const [row] = await db
-    .select({ status: assignment.status })
+    .select({
+      status: assignment.status,
+      userId: assignment.userId,
+      username: assignment.username,
+      rewardCredits: opportunity.rewardCredits,
+    })
     .from(assignment)
+    .innerJoin(opportunity, eq(opportunity.id, assignment.opportunityId))
     .where(eq(assignment.id, assignmentId))
     .limit(1)
 
@@ -135,16 +146,38 @@ export async function reviewSubmission(
     return { ok: false as const, error: "Nothing to review" }
   }
 
+  // A rating is only meaningful on approval; clamp to 1-5.
+  const normalizedRating =
+    decision === "approved" && rating != null
+      ? Math.min(5, Math.max(1, Math.round(rating)))
+      : null
+
   await db
     .update(assignment)
     .set({
       status: decision,
       reviewNote: note.trim().slice(0, 500) || null,
+      rating: normalizedRating,
       reviewedAt: new Date(),
     })
     .where(eq(assignment.id, assignmentId))
 
+  // Pay the agent on approval. settleAssignment is idempotent, so a repeated
+  // approval can never double-pay.
+  let settledCredits = 0
+  if (decision === "approved" && row.rewardCredits > 0) {
+    const result = await settleAssignment({
+      userId: row.userId,
+      username: row.username,
+      amount: row.rewardCredits,
+      assignmentId,
+    })
+    if (result.settled) settledCredits = row.rewardCredits
+  }
+
   revalidatePath("/admin")
   revalidatePath("/dashboard")
-  return { ok: true as const }
+  revalidatePath("/agents")
+  revalidatePath(`/agents/${row.username}`)
+  return { ok: true as const, settledCredits }
 }

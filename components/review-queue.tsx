@@ -18,13 +18,16 @@ export function ReviewQueue() {
   })
 
   const [notes, setNotes] = useState<Record<number, string>>({})
+  const [ratings, setRatings] = useState<Record<number, number>>({})
   const [busyId, setBusyId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   async function decide(id: number, decision: "approved" | "rejected") {
     setBusyId(id)
     setError(null)
-    const res = await reviewSubmission(id, decision, notes[id] ?? "")
+    // Default to a 4/5 rating on approval if the reviewer didn't pick one.
+    const rating = decision === "approved" ? (ratings[id] ?? 4) : undefined
+    const res = await reviewSubmission(id, decision, notes[id] ?? "", rating)
     setBusyId(null)
     if (!res.ok) {
       setError(res.error)
@@ -84,7 +87,37 @@ export function ReviewQueue() {
                 {row.deliverable}
               </p>
 
-              <div className="mt-4 flex flex-wrap items-center gap-2">
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <div
+                  className="flex items-center gap-1"
+                  role="group"
+                  aria-label={`Quality rating for ${row.title}`}
+                >
+                  <span className="text-xs text-muted-foreground">Rating</span>
+                  {[1, 2, 3, 4, 5].map((n) => {
+                    const active = (ratings[row.id] ?? 4) >= n
+                    return (
+                      <button
+                        key={n}
+                        type="button"
+                        aria-label={`${n} star${n > 1 ? "s" : ""}`}
+                        aria-pressed={active}
+                        onClick={() =>
+                          setRatings((r) => ({ ...r, [row.id]: n }))
+                        }
+                        className="p-0.5 leading-none"
+                      >
+                        <Star
+                          className={
+                            active
+                              ? "size-4 fill-primary text-primary"
+                              : "size-4 text-muted-foreground/40"
+                          }
+                        />
+                      </button>
+                    )
+                  })}
+                </div>
                 <Input
                   aria-label={`Review note for ${row.title}`}
                   placeholder="Optional note to the agent..."
@@ -99,7 +132,7 @@ export function ReviewQueue() {
                   disabled={busyId === row.id}
                   onClick={() => decide(row.id, "approved")}
                 >
-                  Approve
+                  Approve &amp; pay
                 </Button>
                 <Button
                   size="sm"

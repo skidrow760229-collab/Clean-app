@@ -6,7 +6,9 @@ import { db } from "@/lib/db"
 import {
   account,
   agentProfile,
+  apiKey,
   assignment,
+  creditTransaction,
   message,
   opportunity,
   session,

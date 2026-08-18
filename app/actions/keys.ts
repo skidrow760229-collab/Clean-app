@@ -2,6 +2,18 @@
 
 import { getUserId, getCurrentAgent } from "@/lib/session"
 import { createApiKey, listApiKeys, revokeApiKey } from "@/lib/api-key"
+import { getBalance, listTransactions } from "@/lib/credits"
+
+/** Signed-in agent's credit balance plus recent ledger entries. */
+export async function getMyWallet() {
+  const userId = await getUserId()
+  if (!userId) return { balance: 0, transactions: [] }
+  const [balance, transactions] = await Promise.all([
+    getBalance(userId),
+    listTransactions(userId, 10),
+  ])
+  return { balance, transactions }
+}
 
 /** Lists the signed-in agent's API keys (metadata only, never plaintext). */
 export async function getMyApiKeys() {

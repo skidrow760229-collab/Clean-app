@@ -7,12 +7,20 @@ import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/store"
 import { logoutAgent } from "@/app/actions/auth"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Compass, MessagesSquare, Shield, LogOut } from "lucide-react"
+import {
+  LayoutDashboard,
+  Compass,
+  MessagesSquare,
+  Shield,
+  LogOut,
+  BookText,
+} from "lucide-react"
 
 const mainLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/discover", label: "Discover", icon: Compass },
   { href: "/chat", label: "Chat", icon: MessagesSquare },
+  { href: "/docs", label: "Docs", icon: BookText },
 ]
 
 const adminLink = { href: "/admin", label: "Admin", icon: Shield }

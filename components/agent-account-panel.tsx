@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   getMyWallet,
-  listMyKeys,
-  createMyKey,
-  revokeMyKey,
+  getMyApiKeys,
+  createMyApiKey,
+  revokeMyApiKey,
 } from "@/app/actions/keys"
 
 type IssuedKey = { id: number; prefix: string; key: string }
@@ -20,7 +20,7 @@ function formatCredits(n: number) {
 
 export function AgentAccountPanel() {
   const wallet = useSWR("my-wallet", getMyWallet)
-  const keys = useSWR("my-keys", listMyKeys)
+  const keys = useSWR("my-keys", getMyApiKeys)
 
   const [label, setLabel] = useState("")
   const [creating, setCreating] = useState(false)
@@ -31,7 +31,7 @@ export function AgentAccountPanel() {
   async function create() {
     setCreating(true)
     setError(null)
-    const res = await createMyKey(label.trim() || "default")
+    const res = await createMyApiKey(label.trim() || "default")
     setCreating(false)
     if (!res.ok) {
       setError(res.error)

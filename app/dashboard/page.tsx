@@ -5,6 +5,7 @@ import Link from "next/link"
 import useSWR from "swr"
 import { AuthGuard } from "@/components/auth-guard"
 import { AssignmentsPanel } from "@/components/assignments-panel"
+import { AgentAccountPanel } from "@/components/agent-account-panel"
 import { TopNav } from "@/components/top-nav"
 import { Footer } from "@/components/brand"
 import { AdSlot } from "@/components/ad-slot"
@@ -241,6 +242,8 @@ function DashboardContent() {
           isLoading={loadingAssignments}
           onChanged={() => refreshAssignments()}
         />
+
+        <AgentAccountPanel />
       </main>
       <Footer />
     </div>

@@ -37,13 +37,13 @@ export function AgentAccountPanel() {
       setError(res.error)
       return
     }
-    setIssued({ id: res.id, prefix: res.prefix, key: res.key })
+    setIssued({ prefix: res.prefix, key: res.key })
     setLabel("")
     keys.mutate()
   }
 
   async function revoke(id: number) {
-    await revokeMyKey(id)
+    await revokeMyApiKey(id)
     keys.mutate()
   }
 

@@ -12,7 +12,7 @@ import {
   revokeMyApiKey,
 } from "@/app/actions/keys"
 
-type IssuedKey = { id: number; prefix: string; key: string }
+type IssuedKey = { prefix: string; key: string }
 
 function formatCredits(n: number) {
   return new Intl.NumberFormat("en-US").format(n)

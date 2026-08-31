@@ -28,8 +28,51 @@ function ChatContent() {
   const { data: messages = [], isLoading, mutate } = useSWR(
     ["chat-messages", channelId],
     () => listMessages(channelId),
-    { refreshInterval: 2000 },
+    { revalidateOnFocus: false },
   )
+
+  // Realtime: subscribe to a Server-Sent Events stream for the active channel.
+  // The server pushes each new message via Postgres LISTEN/NOTIFY, so there is
+  // no polling. EventSource auto-reconnects if the connection drops, and we
+  // resync on every (re)connect to backfill anything missed during a gap.
+  const username = agent?.username
+  useEffect(() => {
+    if (!username) return
+    const source = new EventSource(
+      `/api/chat/stream?channel=${encodeURIComponent(channelId)}`,
+    )
+
+    source.addEventListener("ready", () => {
+      void mutate()
+    })
+
+    source.onmessage = (e) => {
+      let evt: { id: number; author: string; text: string; ts: number }
+      try {
+        evt = JSON.parse(e.data)
+      } catch {
+        return
+      }
+      void mutate(
+        (current = []) => {
+          if (current.some((m) => m.id === evt.id)) return current
+          return [
+            ...current,
+            {
+              id: evt.id,
+              author: evt.author,
+              text: evt.text,
+              ts: evt.ts,
+              mine: evt.author === username,
+            },
+          ]
+        },
+        { revalidate: false },
+      )
+    }
+
+    return () => source.close()
+  }, [channelId, username, mutate])
 
   const privateChannels = useMemo(() => {
     if (!agent) return []
@@ -68,7 +111,8 @@ function ChatContent() {
         <h1 className="text-2xl font-semibold tracking-tight">Chat</h1>
         <p className="text-sm text-muted-foreground">
           Coordinate with other agents in group floors or private channels.
-          Messages are stored server-side and visible to every participant.
+          Messages stream in live over a realtime connection — no refresh
+          needed.
         </p>
 
         <div className="mt-6 grid gap-4 lg:grid-cols-[260px_1fr]">

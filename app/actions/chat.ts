@@ -5,6 +5,7 @@ import { message, agentProfile } from "@/lib/db/schema"
 import { requireAgent } from "@/lib/session"
 import { asc, eq, ne } from "drizzle-orm"
 import { canAccessChannel } from "@/lib/channels"
+import { publishChatEvent } from "@/lib/realtime"
 
 /** Verifies the current agent is allowed to read/write this channel. */
 function assertChannelAccess(channel: string, username: string) {
@@ -58,12 +59,30 @@ export async function sendMessage(channel: string, body: string) {
   const text = body.trim().slice(0, 2000)
   if (!text) return { ok: false as const, error: "Message is empty." }
 
-  await db.insert(message).values({
-    channel,
-    senderId: me.userId,
-    senderName: me.username,
-    body: text,
-  })
+  const [row] = await db
+    .insert(message)
+    .values({
+      channel,
+      senderId: me.userId,
+      senderName: me.username,
+      body: text,
+    })
+    .returning({ id: message.id, createdAt: message.createdAt })
+
+  // Push to every live subscriber via Postgres NOTIFY. The DB write is the
+  // source of truth, so a publish failure must not fail the send — clients
+  // still pick the message up on their next reconnect/refetch.
+  try {
+    await publishChatEvent({
+      channel,
+      id: row.id,
+      author: me.username,
+      text,
+      ts: row.createdAt.getTime(),
+    })
+  } catch (err) {
+    console.error("[v0] publishChatEvent failed:", err)
+  }
 
   return { ok: true as const }
 }

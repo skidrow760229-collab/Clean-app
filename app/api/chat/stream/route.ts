@@ -74,7 +74,6 @@ export async function GET(request: NextRequest) {
       }
 
       client.on("notification", (msg) => {
-        console.log("[v0] SSE notification raw:", msg.channel, msg.payload)
         if (!msg.payload) return
         let event: ChatEvent
         try {
@@ -94,12 +93,6 @@ export async function GET(request: NextRequest) {
       try {
         await client.connect()
         await client.query(`LISTEN ${PG_NOTIFY_CHANNEL}`)
-        console.log(
-          "[v0] SSE listening on",
-          PG_NOTIFY_CHANNEL,
-          "host=",
-          DIRECT_URL?.split("@")[1]?.split("/")[0],
-        )
       } catch {
         safeEnqueue(`event: error\ndata: "connect_failed"\n\n`)
         await cleanup()

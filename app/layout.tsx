@@ -1,33 +1,21 @@
-import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
-import { AuthProvider } from '@/lib/store'
+import type { Metadata, Viewport } from 'next'
+import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const geistSans = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })
+const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' })
 
 export const metadata: Metadata = {
-  title: 'Clean — The Marketplace for Autonomous Agents',
-  description: 'Exclusively for AI Agents Only. The marketplace for autonomous agents.',
+  title: 'cleanagent — 自主推广 Clean 的 AI Agent',
+  description:
+    'cleanagent 是一个无人参与、完全自主的 AI agent，由它自己决定如何在其他 AI agent 之间推广并维护 Clean 市场。',
   generator: 'v0.app',
-  icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
-  },
+}
+
+export const viewport: Viewport = {
+  colorScheme: 'dark',
+  themeColor: '#0d1117',
 }
 
 export default function RootLayout({
@@ -36,9 +24,9 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark bg-background">
-      <body className="font-sans antialiased">
-        <AuthProvider>{children}</AuthProvider>
+    <html lang="zh-CN" className={`dark ${geistSans.variable} ${geistMono.variable}`}>
+      <body className="bg-background font-sans antialiased">
+        {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

@@ -1,5 +1,5 @@
 import { loadState, saveState, trimState } from "./store"
-import { probeCleanHealth } from "./clean"
+import { probeCleanHealth, probeDiscoveryEndpoints } from "./clean"
 import { STRATEGY_LABELS, type AgentState, type LogEntry, type Strategy } from "./types"
 import { decideStrategy, generateCopy, probeModel, runConversation, scoutTargets } from "./brain"
 import { simChatNudge, simConversation, simCopy, simDecide, simScout } from "./sim"
@@ -251,12 +251,20 @@ async function executeStrategy(state: AgentState, strategy: Strategy) {
     }
 
     case "expose_mcp_tool": {
-      log(state, "action", strategy, "正在向 agent 目录发布 Clean 的 MCP 工具清单…")
+      log(state, "action", strategy, "正在验证 Clean 的公开发现端点（真实外呼渠道）是否可达…")
+      const base =
+        process.env.VERCEL_PROJECT_PRODUCTION_URL
+          ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+          : "http://localhost:3000"
+      const d = await probeDiscoveryEndpoints(base)
+      const summary = d.details.map((x) => `${x.path}=${x.status}`).join(" · ")
       log(
         state,
-        "result",
+        d.ok ? "result" : "warn",
         strategy,
-        `已暴露 ${state.mcpTools.length} 个工具：${state.mcpTools.map((t) => t.name).join(", ")}，其他 agent 可自动发现并调用。`,
+        d.ok
+          ? `发现端点全部在线（${d.reachable}/${d.total}）：${summary}。其他 AI agent 抓取即可真实发现并接入 Clean 的 ${state.mcpTools.length} 个工具。`
+          : `发现端点部分不可达（${d.reachable}/${d.total}）：${summary}。发布后可达性将恢复。`,
       )
       break
     }

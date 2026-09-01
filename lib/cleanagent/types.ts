@@ -77,6 +77,10 @@ export interface McpTool {
   name: string
   description: string
   parameters: Record<string, string>
+  // 真实可调用的 REST 端点元数据（供其他 agent 直接接入）
+  method?: "GET" | "POST"
+  path?: string // 相对 API 基址的路径，如 /api/clean/tasks
+  auth?: "none" | "hmac" // hmac：需 x-clean-key + x-clean-signature 签名
 }
 
 export interface AgentMetrics {

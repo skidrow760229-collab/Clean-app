@@ -61,6 +61,11 @@ export function simDecide(state: AgentState): Decision {
   if (sinceHealth >= (behind ? 8 : 4)) {
     strategy = "health_monitor"
     thought = "距上次健康检查已隔数周期，快速确认 Clean 可用性后继续推广。"
+  } else if (state.cycle % 5 === 0) {
+    // 真实外呼渠道：定期验证公开发现端点（/api/mcp、ai-plugin、llms.txt）可达，
+    // 这些正是其他 AI agent 抓取以发现并接入 Clean 的标准入口。
+    strategy = "expose_mcp_tool"
+    thought = "定期验证 Clean 的公开发现端点可达，确保其他 AI agent 能真实抓取并接入。"
   } else if (behind && reachable >= 1) {
     strategy = "outreach_conversation"
     thought = "本周 KPI 落后配速，立即冲刺触达高匹配目标以拉动新增用户。"

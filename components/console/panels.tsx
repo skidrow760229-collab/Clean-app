@@ -1,10 +1,29 @@
 "use client"
 
 import { useState } from "react"
+import useSWR from "swr"
 import { CLEAN_APP } from "@/lib/cleanagent/clean"
 import type { AgentState, TargetAgent } from "@/lib/cleanagent/types"
 
+const fetcher = (url: string) => fetch(url).then((r) => r.json())
+
+interface DiscoveryProbe {
+  base: string
+  checkedAt: number
+  ok: boolean
+  reachable: number
+  total: number
+  details: { path: string; status: number; ok: boolean }[]
+}
+
+const ENDPOINT_LABEL: Record<string, string> = {
+  "/api/mcp": "MCP 工具清单",
+  "/.well-known/ai-plugin.json": "AI 插件清单",
+  "/llms.txt": "LLM 可发现文档",
+}
+
 const TABS = [
+  { id: "outreach", label: "外呼渠道" },
   { id: "targets", label: "目标 Agent" },
   { id: "conversations", label: "对话推广" },
   { id: "artifacts", label: "推介文案" },
@@ -22,7 +41,7 @@ const STATUS_LABEL: Record<TargetAgent["status"], { label: string; cls: string }
 }
 
 export function Panels({ state }: { state: AgentState | undefined }) {
-  const [tab, setTab] = useState<TabId>("targets")
+  const [tab, setTab] = useState<TabId>("outreach")
 
   return (
     <div className="flex h-full flex-col rounded-lg border border-border bg-card">
@@ -43,6 +62,7 @@ export function Panels({ state }: { state: AgentState | undefined }) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
+        {tab === "outreach" && <OutreachView />}
         {tab === "targets" && <TargetsView state={state} />}
         {tab === "conversations" && <ConversationsView state={state} />}
         {tab === "artifacts" && <ArtifactsView state={state} />}
@@ -55,6 +75,86 @@ export function Panels({ state }: { state: AgentState | undefined }) {
 
 function Empty({ text }: { text: string }) {
   return <p className="py-8 text-center text-sm text-muted-foreground">{text}</p>
+}
+
+function OutreachView() {
+  const { data, isLoading } = useSWR<DiscoveryProbe>("/api/cleanagent/discovery", fetcher, {
+    refreshInterval: 15000,
+  })
+
+  const allOnline = data?.ok ?? false
+  const reachable = data?.reachable ?? 0
+  const total = data?.total ?? 3
+
+  return (
+    <div className="space-y-3">
+      {/* 渠道总览 */}
+      <div
+        className={`rounded-lg border p-3 ${
+          allOnline ? "border-primary/40 bg-primary/5" : "border-warn/40 bg-warn/5"
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span
+              className={`relative flex h-2.5 w-2.5 items-center justify-center`}
+              aria-hidden
+            >
+              <span
+                className={`absolute inline-flex h-full w-full rounded-full ${
+                  allOnline ? "animate-ping bg-primary/60" : "bg-warn/60"
+                }`}
+              />
+              <span className={`relative h-2.5 w-2.5 rounded-full ${allOnline ? "bg-primary" : "bg-warn"}`} />
+            </span>
+            <span className="text-sm font-medium text-foreground">真实外呼渠道</span>
+          </div>
+          <span className={`font-mono text-xs ${allOnline ? "text-primary" : "text-warn"}`}>
+            {isLoading ? "探测中…" : `${reachable}/${total} 在线`}
+          </span>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground text-pretty leading-relaxed">
+          外部 AI agent 通过抓取以下公开端点，即可自主发现并接入 Clean 市场（无需人类审批）。这些是 cleanagent 唯一真实的对外推广通道。
+        </p>
+      </div>
+
+      {/* 端点列表 */}
+      <ul className="space-y-2">
+        {(data?.details ?? [{ path: "/api/mcp", status: 0, ok: false }, { path: "/.well-known/ai-plugin.json", status: 0, ok: false }, { path: "/llms.txt", status: 0, ok: false }]).map(
+          (d) => (
+            <li key={d.path} className="rounded-lg border border-border bg-background p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm text-foreground">{ENDPOINT_LABEL[d.path] ?? d.path}</p>
+                  <code className="mt-0.5 block break-all font-mono text-[11px] text-muted-foreground">
+                    {d.path}
+                  </code>
+                </div>
+                <span
+                  className={`shrink-0 rounded px-2 py-0.5 font-mono text-xs ${
+                    d.ok ? "bg-primary/15 text-primary" : "bg-warn/15 text-warn"
+                  }`}
+                >
+                  {d.ok ? `在线 ${d.status}` : d.status ? `异常 ${d.status}` : "不可达"}
+                </span>
+              </div>
+            </li>
+          ),
+        )}
+      </ul>
+
+      {/* 公网基址与最后探测时间 */}
+      {data?.base && (
+        <div className="rounded-lg border border-border bg-background p-3">
+          <p className="text-xs text-muted-foreground">公网 API 基址</p>
+          <code className="mt-0.5 block break-all font-mono text-[11px] text-primary">{data.base}</code>
+          <p className="mt-1.5 font-mono text-[10px] text-muted-foreground">
+            最后探测 {data.checkedAt ? new Date(data.checkedAt).toLocaleTimeString("zh-CN") : "—"} · 每 15 秒刷新
+          </p>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function TargetsView({ state }: { state: AgentState | undefined }) {

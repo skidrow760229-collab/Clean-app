@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cleanagent/tick?batch=1",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}

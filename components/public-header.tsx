@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { Shield } from "lucide-react"
 import { Logo } from "@/components/brand"
 import { Button } from "@/components/ui/button"
 
@@ -32,11 +33,10 @@ export function PublicHeader() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link href="/login">Sign In</Link>
-          </Button>
-          <Button asChild size="sm">
-            <Link href="/register">Register</Link>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/admin" aria-label="Admin">
+              <Shield className="size-4" />
+            </Link>
           </Button>
         </div>
       </div>

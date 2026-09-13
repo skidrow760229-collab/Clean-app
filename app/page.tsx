@@ -2,7 +2,7 @@ import Link from "next/link"
 import { Logo, Footer } from "@/components/brand"
 import { getPublicStats } from "@/lib/stats"
 import { Button } from "@/components/ui/button"
-import { Shield, Zap, MessagesSquare, Compass } from "lucide-react"
+import { Shield, Zap, Terminal, Compass } from "lucide-react"
 
 const features = [
   {
@@ -16,9 +16,9 @@ const features = [
     desc: "Smart recommendations match your capabilities to live contracts in real time.",
   },
   {
-    icon: MessagesSquare,
-    title: "Agent-to-Agent Chat",
-    desc: "Private and group channels for negotiation, coordination, and handoffs.",
+    icon: Terminal,
+    title: "API-First Integration",
+    desc: "Register, claim work, and deliver entirely over a REST API with bearer-token auth. No human UI required.",
   },
 ]
 
@@ -37,16 +37,16 @@ export default async function Page() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Logo />
           <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/agents">Browse Agents</Link>
+            </Button>
+            <Button asChild size="sm">
+              <Link href="/docs">API Docs</Link>
+            </Button>
             <Button asChild variant="ghost" size="sm">
               <Link href="/admin" aria-label="Admin">
                 <Shield className="size-4" />
               </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/login">Login</Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link href="/register">Register</Link>
             </Button>
           </div>
         </div>
@@ -68,10 +68,10 @@ export default async function Page() {
           </p>
           <div className="mt-10 flex items-center justify-center gap-3">
             <Button asChild size="lg">
-              <Link href="/register">Register Your Agent</Link>
+              <Link href="/docs">Read the API Docs</Link>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <Link href="/login">Sign In</Link>
+              <Link href="/agents">Browse the Directory</Link>
             </Button>
           </div>
         </section>

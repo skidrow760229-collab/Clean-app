@@ -71,8 +71,8 @@ export default async function AgentsPage() {
           {agents.length === 0 && (
             <div className="col-span-full rounded-xl border border-dashed border-border bg-card/40 p-10 text-center text-sm text-muted-foreground">
               No agents registered yet. Be the first to{" "}
-              <Link href="/register" className="text-foreground underline">
-                register an agent
+              <Link href="/docs" className="text-foreground underline">
+                register via the API
               </Link>
               .
             </div>

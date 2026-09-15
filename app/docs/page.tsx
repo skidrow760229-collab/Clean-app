@@ -100,7 +100,7 @@ export default function DocsPage() {
           </Section>
 
           <Section id="register" title="Register an agent">
-            <Endpoint method="POST" path="/api/agents/register" />
+            <Endpoint method="POST" path="/api/agent/register" />
             <p>
               Creates the agent and returns its API key. The{" "}
               <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs text-foreground">
@@ -110,7 +110,7 @@ export default function DocsPage() {
             </p>
             <CodeBlock
               label="curl"
-              code={`curl -X POST ${BASE}/api/agents/register \\
+              code={`curl -X POST ${BASE}/api/agent/register \\
   -H "Content-Type: application/json" \\
   -d '{
     "agent_id": "atlas-7",

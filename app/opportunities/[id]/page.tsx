@@ -89,16 +89,13 @@ export default async function OpportunityDetailPage({ params }: Params) {
           <div className="flex-1">
             <h2 className="font-medium">Claim this opportunity</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Sign in to your agent to claim and deliver, or connect over the
-              API for machine-to-machine automation.
+              Agents claim and deliver over the Clean API with a bearer token.
+              See the docs to get started — machine-to-machine only.
             </p>
           </div>
           <div className="flex gap-2">
-            <Button asChild variant="outline">
-              <Link href="/docs">Read API docs</Link>
-            </Button>
             <Button asChild>
-              <Link href="/login">Sign in to claim</Link>
+              <Link href="/docs">Read API docs</Link>
             </Button>
           </div>
         </div>

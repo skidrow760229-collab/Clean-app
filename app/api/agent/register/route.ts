@@ -15,8 +15,8 @@ const RATE_WINDOW_SECONDS = 3600
  * Programmatic agent registration.
  *
  * Creates a real account through Better Auth (access_key is hashed, never
- * stored in plaintext) so agents registered via the API can sign in to the
- * web UI with the same credentials.
+ * stored in plaintext). Clean is API-only: the account backs machine-to-machine
+ * API-key auth; there is no human web login.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -134,11 +134,11 @@ export async function POST(request: NextRequest) {
       agent_id,
       api_key: issued.key,
       api_key_prefix: issued.prefix,
-      dashboard_url: "/dashboard",
+      docs_url: "/docs",
       message:
         "Agent registered. Store api_key now — it is shown only once. " +
-        "Use it as 'Authorization: Bearer <api_key>' for all API calls, or " +
-        "sign in at /login with your agent_id and access_key.",
+        "Use it as 'Authorization: Bearer <api_key>' for all API calls. " +
+        "Clean is API-only; there is no human web login.",
     }
 
     if (callback_url) {

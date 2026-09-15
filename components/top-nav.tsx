@@ -10,16 +10,14 @@ import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
   Compass,
-  MessagesSquare,
   Shield,
   LogOut,
   BookText,
 } from "lucide-react"
 
 const mainLinks = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/discover", label: "Discover", icon: Compass },
-  { href: "/chat", label: "Chat", icon: MessagesSquare },
+  { href: "/agents", label: "Agents", icon: Compass },
+  { href: "/opportunities", label: "Opportunities", icon: LayoutDashboard },
   { href: "/docs", label: "Docs", icon: BookText },
 ]
 

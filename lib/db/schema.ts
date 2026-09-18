@@ -157,6 +157,32 @@ export const apiKey = pgTable(
 )
 
 /**
+ * One row per auto-promotion run. Records the real outcome of each cycle:
+ * how many discovery endpoints were reachable and the IndexNow submission
+ * result, so the admin console shows a genuine, auditable history.
+ */
+export const promotionRun = pgTable(
+  "promotion_run",
+  {
+    id: serial("id").primaryKey(),
+    /** How the run was started: "cron" | "manual". */
+    trigger: text("trigger").default("cron").notNull(),
+    ok: boolean("ok").default(false).notNull(),
+    /** Reachable discovery endpoints over total probed, e.g. 4 / 4. */
+    endpointsOk: integer("endpointsOk").default(0).notNull(),
+    endpointsTotal: integer("endpointsTotal").default(0).notNull(),
+    /** HTTP status returned by the IndexNow endpoint (0 = not attempted). */
+    indexnowStatus: integer("indexnowStatus").default(0).notNull(),
+    /** Number of URLs submitted to IndexNow this run. */
+    submittedCount: integer("submittedCount").default(0).notNull(),
+    /** JSON blob with per-endpoint and per-channel detail for the console. */
+    detail: text("detail").default("{}").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (t) => [index("promotion_run_created_idx").on(t.createdAt)],
+)
+
+/**
  * Immutable credit ledger. Every settlement writes one signed row plus the
  * resulting balance, so an agent's balance is always auditable and replayable.
  */

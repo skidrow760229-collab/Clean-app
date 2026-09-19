@@ -14,10 +14,20 @@ import { Spinner } from "@/components/ui/spinner"
 import {
   checkAdmin,
   getAdminData,
+  getPromotionData,
   lockAdmin,
+  triggerPromotion,
   unlockAdmin,
 } from "@/app/actions/admin"
-import { ShieldAlert, Lock, LogOut } from "lucide-react"
+import {
+  ShieldAlert,
+  Lock,
+  LogOut,
+  Radar,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+} from "lucide-react"
 
 export default function AdminPage() {
   const router = useRouter()
@@ -36,6 +46,21 @@ export default function AdminPage() {
     () => getAdminData(),
     { refreshInterval: 10000 },
   )
+
+  const { data: promo, mutate: mutatePromo } = useSWR(
+    unlocked ? "promotion-data" : null,
+    () => getPromotionData(),
+    { refreshInterval: 15000 },
+  )
+
+  const [promoting, setPromoting] = useState(false)
+  const runPromotionNow = async () => {
+    if (promoting) return
+    setPromoting(true)
+    await triggerPromotion()
+    await mutatePromo()
+    setPromoting(false)
+  }
 
   const submit = async () => {
     if (busy) return
@@ -168,6 +193,98 @@ export default function AdminPage() {
             <p className="mt-1 text-3xl font-semibold">Clean</p>
           </div>
         </div>
+
+        <section className="mt-10">
+          <div className="flex flex-wrap items-center gap-2">
+            <Radar className="size-5" />
+            <h2 className="text-lg font-medium">自动推广 · Auto-Promotion</h2>
+            <Badge variant="secondary">7×24 Cron</Badge>
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-auto"
+              onClick={runPromotionNow}
+              disabled={promoting}
+            >
+              {promoting ? (
+                <Spinner className="size-4" />
+              ) : (
+                <RefreshCw className="size-4" />
+              )}
+              立即推广
+            </Button>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {"每 6 小时自动向 IndexNow（Bing / Yandex / Seznam / Naver）提交市场 URL，并真实探测发现端点存活。IndexNow key："}
+            <code className="ml-1 break-all text-xs">{promo?.keyLocation ?? "—"}</code>
+          </p>
+
+          <div className="mt-4 overflow-x-auto rounded-xl border border-border">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-secondary/50 text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-medium">时间</th>
+                  <th className="px-4 py-3 font-medium">触发</th>
+                  <th className="px-4 py-3 font-medium">发现端点</th>
+                  <th className="px-4 py-3 font-medium">IndexNow</th>
+                  <th className="px-4 py-3 font-medium">提交 URL</th>
+                  <th className="px-4 py-3 font-medium">结果</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!promo ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-center">
+                      <Spinner className="mx-auto size-5 text-muted-foreground" />
+                    </td>
+                  </tr>
+                ) : promo.runs.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-4 py-6 text-center text-muted-foreground"
+                    >
+                      暂无推广记录。点击「立即推广」运行第一轮。
+                    </td>
+                  </tr>
+                ) : (
+                  promo.runs.map((r) => (
+                    <tr key={r.id} className="border-t border-border">
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {new Date(r.createdAt).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline">
+                          {r.trigger === "cron" ? "定时" : "手动"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {r.endpointsOk} / {r.endpointsTotal}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        HTTP {r.indexnowStatus || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {r.submittedCount}
+                      </td>
+                      <td className="px-4 py-3">
+                        {r.ok ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                            <CheckCircle2 className="size-4" /> 成功
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-destructive">
+                            <XCircle className="size-4" /> 部分失败
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         <section className="mt-10">
           <h2 className="text-lg font-medium">Registered Agents</h2>

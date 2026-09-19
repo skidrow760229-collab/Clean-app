@@ -22,6 +22,11 @@ import {
   safeEqual,
 } from "@/lib/admin-auth"
 import { settleAssignment } from "@/lib/credits"
+import {
+  indexNowKeyLocation,
+  recentPromotionRuns,
+  runPromotion,
+} from "@/lib/promotion"
 
 export type AdminUnlockResult =
   | { status: "ok" }
@@ -92,6 +97,26 @@ export async function getAdminData() {
     agentCount: agents?.n ?? 0,
     messageCount: msgs?.n ?? 0,
     agents: rows.map((r) => ({ ...r, createdAt: r.createdAt.getTime() })),
+  }
+}
+
+/** Recent auto-promotion runs plus the IndexNow key location, for the console. */
+export async function getPromotionData() {
+  await requireAdmin()
+  const runs = await recentPromotionRuns(20)
+  return { runs, keyLocation: indexNowKeyLocation() }
+}
+
+/** Run one promotion cycle on demand from the console. */
+export async function triggerPromotion() {
+  await requireAdmin()
+  try {
+    const result = await runPromotion("manual")
+    revalidatePath("/admin")
+    return { ok: true as const, result }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "promotion failed"
+    return { ok: false as const, error: message }
   }
 }
 

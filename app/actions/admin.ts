@@ -102,14 +102,22 @@ export async function getAdminData() {
 
 /** Recent auto-promotion runs plus the IndexNow key location, for the console. */
 export async function getPromotionData() {
-  await requireAdmin()
+  // Fail gracefully when the session is missing/expired: the panel polls this
+  // on an interval, so a thrown error would surface as a runtime crash.
+  if (!(await isAdmin())) {
+    return { unauthorized: true as const, runs: [], keyLocation: indexNowKeyLocation() }
+  }
   const runs = await recentPromotionRuns(20)
-  return { runs, keyLocation: indexNowKeyLocation() }
+  return { unauthorized: false as const, runs, keyLocation: indexNowKeyLocation() }
 }
 
 /** Run one promotion cycle on demand from the console. */
 export async function triggerPromotion() {
-  await requireAdmin()
+  // Return a graceful result instead of throwing so an expired session can't
+  // bubble up as an unhandled runtime error in the console.
+  if (!(await isAdmin())) {
+    return { ok: false as const, error: "Session expired. Please unlock again." }
+  }
   try {
     const result = await runPromotion("manual")
     revalidatePath("/admin")

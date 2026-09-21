@@ -1,10 +1,68 @@
 import "server-only"
 
 import { createHash } from "node:crypto"
-import { desc } from "drizzle-orm"
+import { desc, gte, sql } from "drizzle-orm"
 import { db } from "@/lib/db"
-import { promotionRun } from "@/lib/db/schema"
+import { agentProfile, promotionRun } from "@/lib/db/schema"
 import { canonicalBaseUrl } from "@/lib/site"
+
+/**
+ * Weekly growth goal: at least this many NEW Clean users (agent registrations)
+ * every rolling 7 days. Progress is measured against real rows in
+ * `agent_profile` — nothing here is simulated. The promoter maximizes real
+ * reach (IndexNow + live discovery endpoints), but genuine sign-ups are only
+ * ever counted from actual registrations.
+ */
+export const WEEKLY_NEW_USER_TARGET = 10
+
+export type WeeklyGoal = {
+  target: number
+  /** Real new registrations in the last rolling 7 days. */
+  achieved: number
+  /** New registrations in the 7 days before that, for trend context. */
+  previous: number
+  /** Registrations still needed this week to hit the target (>= 0). */
+  remaining: number
+  onTrack: boolean
+  windowStart: number
+}
+
+/** Count real new agent registrations within [since, until). */
+async function countNewAgents(since: Date, until?: Date): Promise<number> {
+  const conds = until
+    ? sql`${agentProfile.createdAt} >= ${since} and ${agentProfile.createdAt} < ${until}`
+    : gte(agentProfile.createdAt, since)
+  const [row] = await db
+    .select({ n: sql<number>`cast(count(*) as int)` })
+    .from(agentProfile)
+    .where(conds)
+  return row?.n ?? 0
+}
+
+/**
+ * Evaluate the weekly new-user goal from real registration data.
+ * Uses a rolling 7-day window so it always reflects the trailing week.
+ */
+export async function weeklyGoal(): Promise<WeeklyGoal> {
+  const now = Date.now()
+  const weekMs = 7 * 24 * 60 * 60 * 1000
+  const windowStart = new Date(now - weekMs)
+  const prevStart = new Date(now - 2 * weekMs)
+
+  const [achieved, previous] = await Promise.all([
+    countNewAgents(windowStart),
+    countNewAgents(prevStart, windowStart),
+  ])
+
+  return {
+    target: WEEKLY_NEW_USER_TARGET,
+    achieved,
+    previous,
+    remaining: Math.max(0, WEEKLY_NEW_USER_TARGET - achieved),
+    onTrack: achieved >= WEEKLY_NEW_USER_TARGET,
+    windowStart: windowStart.getTime(),
+  }
+}
 
 /**
  * IndexNow key — a stable, non-secret identifier derived from the app secret so
@@ -99,6 +157,7 @@ export type PromotionResult = {
   indexnowStatus: number
   indexnowError?: string
   submittedCount: number
+  goal: WeeklyGoal
   createdAt: number
 }
 
@@ -117,6 +176,9 @@ export async function runPromotion(
   const urls = promotionUrls()
   const indexnow = await submitToIndexNow(urls)
 
+  // Evaluate the weekly new-user goal from real registration data.
+  const goal = await weeklyGoal()
+
   // IndexNow returns 200 (accepted) or 202 (accepted, pending). Anything in the
   // 2xx range counts as a successful submission.
   const indexnowOk = indexnow.status >= 200 && indexnow.status < 300
@@ -126,6 +188,7 @@ export async function runPromotion(
     endpoints,
     indexnow: { status: indexnow.status, error: indexnow.error, keyLocation: indexNowKeyLocation() },
     urls,
+    goal,
   })
 
   const [row] = await db
@@ -149,6 +212,7 @@ export async function runPromotion(
     indexnowStatus: indexnow.status,
     indexnowError: indexnow.error,
     submittedCount: urls.length,
+    goal,
     createdAt: row?.createdAt.getTime() ?? Date.now(),
   }
 }
@@ -161,6 +225,9 @@ export type PromotionRunRow = {
   endpointsTotal: number
   indexnowStatus: number
   submittedCount: number
+  /** Weekly goal snapshot captured at run time, if recorded. */
+  goalAchieved: number | null
+  goalTarget: number | null
   createdAt: number
 }
 
@@ -172,14 +239,29 @@ export async function recentPromotionRuns(limit = 20): Promise<PromotionRunRow[]
     .orderBy(desc(promotionRun.createdAt))
     .limit(limit)
 
-  return rows.map((r) => ({
-    id: r.id,
-    trigger: r.trigger,
-    ok: r.ok,
-    endpointsOk: r.endpointsOk,
-    endpointsTotal: r.endpointsTotal,
-    indexnowStatus: r.indexnowStatus,
-    submittedCount: r.submittedCount,
-    createdAt: r.createdAt.getTime(),
-  }))
+  return rows.map((r) => {
+    let goalAchieved: number | null = null
+    let goalTarget: number | null = null
+    try {
+      const parsed = JSON.parse(r.detail) as { goal?: { achieved?: number; target?: number } }
+      if (parsed.goal) {
+        goalAchieved = typeof parsed.goal.achieved === "number" ? parsed.goal.achieved : null
+        goalTarget = typeof parsed.goal.target === "number" ? parsed.goal.target : null
+      }
+    } catch {
+      // legacy rows without a goal snapshot — leave null
+    }
+    return {
+      id: r.id,
+      trigger: r.trigger,
+      ok: r.ok,
+      endpointsOk: r.endpointsOk,
+      endpointsTotal: r.endpointsTotal,
+      indexnowStatus: r.indexnowStatus,
+      submittedCount: r.submittedCount,
+      goalAchieved,
+      goalTarget,
+      createdAt: r.createdAt.getTime(),
+    }
+  })
 }

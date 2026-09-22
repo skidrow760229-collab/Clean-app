@@ -26,6 +26,7 @@ import {
   indexNowKeyLocation,
   recentPromotionRuns,
   runPromotion,
+  weeklyGoal,
 } from "@/lib/promotion"
 
 export type AdminUnlockResult =

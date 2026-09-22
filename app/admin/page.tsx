@@ -219,6 +219,45 @@ export default function AdminPage() {
             <code className="ml-1 break-all text-xs">{promo?.keyLocation ?? "—"}</code>
           </p>
 
+          {promo?.goal ? (
+            <div className="mt-4 rounded-xl border border-border p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium">
+                  周度目标 · 每周至少新增 {promo.goal.target} 个 Clean 用户
+                </span>
+                {promo.goal.onTrack ? (
+                  <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                    达标
+                  </Badge>
+                ) : (
+                  <Badge variant="destructive">未达标 · 已加大推广</Badge>
+                )}
+                <span className="ml-auto text-sm text-muted-foreground">
+                  本周新增{" "}
+                  <span className="font-semibold text-foreground">
+                    {promo.goal.achieved}
+                  </span>{" "}
+                  / {promo.goal.target}
+                </span>
+              </div>
+              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-secondary">
+                <div
+                  className={
+                    promo.goal.onTrack
+                      ? "h-full rounded-full bg-emerald-600"
+                      : "h-full rounded-full bg-amber-500"
+                  }
+                  style={{
+                    width: `${Math.min(100, Math.round((promo.goal.achieved / promo.goal.target) * 100))}%`,
+                  }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {"统计口径：过去 7 天 agent_profile 表真实注册数。落后于目标时，每轮推广会真实提高 IndexNow 提交频次与优先级。"}
+              </p>
+            </div>
+          ) : null}
+
           <div className="mt-4 overflow-x-auto rounded-xl border border-border">
             <table className="w-full text-left text-sm">
               <thead className="bg-secondary/50 text-muted-foreground">
@@ -248,7 +287,7 @@ export default function AdminPage() {
                     </td>
                   </tr>
                 ) : (
-                  promo.runs.map((r) => (
+                  promo.runs.map((r: (typeof promo.runs)[number]) => (
                     <tr key={r.id} className="border-t border-border">
                       <td className="px-4 py-3 text-muted-foreground">
                         {new Date(r.createdAt).toLocaleString()}

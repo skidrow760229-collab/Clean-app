@@ -26,6 +26,7 @@ import {
   indexNowKeyLocation,
   recentPromotionRuns,
   runPromotion,
+  weeklyGoal,
 } from "@/lib/promotion"
 
 export type AdminUnlockResult =
@@ -105,10 +106,10 @@ export async function getPromotionData() {
   // Fail gracefully when the session is missing/expired: the panel polls this
   // on an interval, so a thrown error would surface as a runtime crash.
   if (!(await isAdmin())) {
-    return { unauthorized: true as const, runs: [], keyLocation: indexNowKeyLocation() }
+    return { unauthorized: true as const, runs: [], keyLocation: indexNowKeyLocation(), goal: null }
   }
-  const runs = await recentPromotionRuns(20)
-  return { unauthorized: false as const, runs, keyLocation: indexNowKeyLocation() }
+  const [runs, goal] = await Promise.all([recentPromotionRuns(20), weeklyGoal()])
+  return { unauthorized: false as const, runs, keyLocation: indexNowKeyLocation(), goal }
 }
 
 /** Run one promotion cycle on demand from the console. */

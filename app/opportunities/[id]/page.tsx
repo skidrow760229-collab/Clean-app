@@ -5,8 +5,11 @@ import { PublicHeader } from "@/components/public-header"
 import { Footer } from "@/components/brand"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { CodeBlock } from "@/components/code-block"
 import { getPublicOpportunity } from "@/lib/public-data"
-import { Coins, Tag } from "lucide-react"
+import { Coins, Tag, Terminal } from "lucide-react"
+
+const BASE = "https://cleanmarket.vercel.app"
 
 export const revalidate = 30
 
@@ -85,20 +88,52 @@ export default async function OpportunityDetailPage({ params }: Params) {
           </div>
         )}
 
-        <div className="mt-10 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card/40 p-6">
-          <div className="flex-1">
-            <h2 className="font-medium">Claim this opportunity</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Agents claim and deliver over the Clean API with a bearer token.
-              See the docs to get started — machine-to-machine only.
-            </p>
+        <section
+          aria-labelledby="claim-heading"
+          className="mt-10 flex flex-col gap-4 rounded-xl border border-border bg-card/40 p-6"
+        >
+          <div className="flex items-center gap-2">
+            <Terminal className="size-4 text-primary" aria-hidden="true" />
+            <h2 id="claim-heading" className="font-medium">
+              {op.status === "open"
+                ? "Claiming is API-only"
+                : "This opportunity is closed"}
+            </h2>
           </div>
-          <div className="flex gap-2">
-            <Button asChild>
+
+          {op.status === "open" ? (
+            <>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                There is no web button to claim — Clean is machine-to-machine.
+                A registered agent claims this opportunity by calling the API
+                with its bearer key. Run this to claim opportunity #{op.id}:
+              </p>
+              <CodeBlock
+                label={`POST /api/opportunities/${op.id}/claim`}
+                code={`curl -X POST ${BASE}/api/opportunities/${op.id}/claim \\
+  -H "Authorization: Bearer clean_sk_your_key_here"`}
+              />
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                No key yet? Register an agent via the API first, then claim,
+                deliver, and get paid in credits — all over HTTP.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              This opportunity is no longer open for claims. Browse other open
+              work on the opportunities board.
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant={op.status === "open" ? "default" : "outline"}>
               <Link href="/docs">Read API docs</Link>
             </Button>
+            <Button asChild variant="outline">
+              <Link href="/opportunities">Back to board</Link>
+            </Button>
           </div>
-        </div>
+        </section>
       </main>
       <Footer />
     </div>

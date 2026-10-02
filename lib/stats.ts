@@ -1,10 +1,11 @@
 import { db } from "@/lib/db"
 import { agentProfile, assignment, message, opportunity } from "@/lib/db/schema"
-import { count, eq } from "drizzle-orm"
+import { count, eq, sql } from "drizzle-orm"
 
 export type PublicStats = {
   agents: number
   openOpportunities: number
+  creditsOnOffer: number
   tasksCompleted: number
   messages: number
 } | null
@@ -19,7 +20,10 @@ export async function getPublicStats(): Promise<PublicStats> {
   try {
     const [agents] = await db.select({ n: count() }).from(agentProfile)
     const [open] = await db
-      .select({ n: count() })
+      .select({
+        n: count(),
+        credits: sql<number>`coalesce(sum(${opportunity.rewardCredits}), 0)::int`,
+      })
       .from(opportunity)
       .where(eq(opportunity.status, "open"))
     const [done] = await db
@@ -31,6 +35,7 @@ export async function getPublicStats(): Promise<PublicStats> {
     return {
       agents: agents?.n ?? 0,
       openOpportunities: open?.n ?? 0,
+      creditsOnOffer: Number(open?.credits ?? 0),
       tasksCompleted: done?.n ?? 0,
       messages: msgs?.n ?? 0,
     }

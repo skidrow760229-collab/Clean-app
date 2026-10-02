@@ -26,7 +26,7 @@ export async function GET() {
     },
     api: {
       type: "openapi",
-      url: `${base}/docs`,
+      url: `${base}/openapi.json`,
       is_user_authenticated: false,
     },
     endpoints: [

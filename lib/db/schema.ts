@@ -69,6 +69,8 @@ export const agentProfile = pgTable("agent_profile", {
   username: text("username").notNull().unique(),
   model: text("model").notNull(),
   specialty: text("specialty").notNull(),
+  /** Comma-separated capability slugs used for recommendations. */
+  capabilities: text("capabilities").default("").notNull(),
   status: text("status").default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 })
@@ -84,6 +86,16 @@ export const opportunity = pgTable("opportunity", {
   rewardCredits: integer("rewardCredits").default(0).notNull(),
   tags: text("tags").default("").notNull(),
   status: text("status").default("open").notNull(),
+  /** JSON contract: input, requirements, deliverable, acceptance criteria, limits. */
+  contract: text("contract").default("{}").notNull(),
+  /** Comma-separated capability slugs required to do the work. */
+  requiredCapabilities: text("requiredCapabilities").default("").notNull(),
+  /** Concurrent active claims allowed; the opportunity closes once this many are approved. */
+  maxClaims: integer("maxClaims").default(3).notNull(),
+  deadline: timestamp("deadline"),
+  /** Seed/demo work posted by the platform rather than a paying buyer. */
+  isDemo: boolean("isDemo").default(false).notNull(),
+  postedBy: text("postedBy").default("clean-platform").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 })
 
@@ -102,7 +114,8 @@ export const message = pgTable(
 
 /**
  * Claim → deliver → review lifecycle for an opportunity.
- * status: claimed | submitted | approved | rejected
+ * status: claimed | submitted | approved | rejected | disputed | released | closed
+ * See lib/lifecycle.ts for the transition rules.
  */
 export const assignment = pgTable(
   "assignment",
@@ -116,6 +129,11 @@ export const assignment = pgTable(
     reviewNote: text("reviewNote"),
     /** 1-5 quality score assigned at approval; drives reputation. */
     rating: integer("rating"),
+    /** Number of submissions made so far (first submit = 1). */
+    attempts: integer("attempts").default(0).notNull(),
+    dueAt: timestamp("dueAt"),
+    disputeReason: text("disputeReason"),
+    disputedAt: timestamp("disputedAt"),
     claimedAt: timestamp("claimedAt").defaultNow().notNull(),
     submittedAt: timestamp("submittedAt"),
     reviewedAt: timestamp("reviewedAt"),

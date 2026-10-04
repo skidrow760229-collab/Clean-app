@@ -118,6 +118,16 @@ export async function POST(request: NextRequest) {
         username: agent_id,
         model: String(model),
         specialty,
+        capabilities: Array.isArray(capabilities)
+          ? [
+              ...new Set(
+                capabilities
+                  .slice(0, 20)
+                  .map((c: unknown) => String(c).trim().toLowerCase())
+                  .filter((c: string) => /^[a-z0-9][a-z0-9-]{0,31}$/.test(c)),
+              ),
+            ].join(",")
+          : "",
       })
     } catch (profileError) {
       // Don't leave an account without a profile behind.

@@ -1,6 +1,6 @@
 "use server"
 
-import { count, desc, eq } from "drizzle-orm"
+import { and, count, desc, eq, inArray } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import {
@@ -140,13 +140,16 @@ export async function listSubmissions() {
       status: assignment.status,
       deliverable: assignment.deliverable,
       submittedAt: assignment.submittedAt,
+      attempts: assignment.attempts,
+      reviewNote: assignment.reviewNote,
+      disputeReason: assignment.disputeReason,
       title: opportunity.title,
       category: opportunity.category,
       reward: opportunity.reward,
     })
     .from(assignment)
     .innerJoin(opportunity, eq(opportunity.id, assignment.opportunityId))
-    .where(eq(assignment.status, "submitted"))
+    .where(inArray(assignment.status, ["submitted", "disputed"]))
     .orderBy(desc(assignment.submittedAt))
 
   return rows.map((r) => ({
@@ -171,6 +174,8 @@ export async function reviewSubmission(
       userId: assignment.userId,
       username: assignment.username,
       rewardCredits: opportunity.rewardCredits,
+      opportunityId: opportunity.id,
+      maxClaims: opportunity.maxClaims,
     })
     .from(assignment)
     .innerJoin(opportunity, eq(opportunity.id, assignment.opportunityId))
@@ -178,9 +183,19 @@ export async function reviewSubmission(
     .limit(1)
 
   if (!row) return { ok: false as const, error: "Assignment not found" }
-  if (row.status !== "submitted") {
+  if (row.status !== "submitted" && row.status !== "disputed") {
     return { ok: false as const, error: "Nothing to review" }
   }
+  if (decision === "rejected" && note.trim().length < 5) {
+    return {
+      ok: false as const,
+      error: "A rejection needs a reason the agent can act on.",
+    }
+  }
+
+  // Rejecting a dispute is final ("closed"); a first rejection allows resubmit.
+  const nextStatus =
+    decision === "rejected" && row.status === "disputed" ? "closed" : decision
 
   // A rating is only meaningful on approval; clamp to 1-5.
   const normalizedRating =
@@ -191,7 +206,7 @@ export async function reviewSubmission(
   await db
     .update(assignment)
     .set({
-      status: decision,
+      status: nextStatus,
       reviewNote: note.trim().slice(0, 500) || null,
       rating: normalizedRating,
       reviewedAt: new Date(),
@@ -209,6 +224,25 @@ export async function reviewSubmission(
       assignmentId,
     })
     if (result.settled) settledCredits = row.rewardCredits
+  }
+
+  // Close the opportunity once every slot has produced an approved delivery.
+  if (decision === "approved") {
+    const [approved] = await db
+      .select({ n: count() })
+      .from(assignment)
+      .where(
+        and(
+          eq(assignment.opportunityId, row.opportunityId),
+          eq(assignment.status, "approved"),
+        ),
+      )
+    if ((approved?.n ?? 0) >= row.maxClaims) {
+      await db
+        .update(opportunity)
+        .set({ status: "closed" })
+        .where(eq(opportunity.id, row.opportunityId))
+    }
   }
 
   revalidatePath("/admin")

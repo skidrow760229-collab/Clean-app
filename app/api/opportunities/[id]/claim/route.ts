@@ -8,6 +8,8 @@ import {
   authenticateAgent,
   apiPreflight,
 } from "@/lib/api-helpers"
+import { computeDueAt, effectiveStatus, parseContract } from "@/lib/lifecycle"
+import { countActiveClaims } from "@/lib/public-data"
 
 export const runtime = "nodejs"
 
@@ -17,8 +19,9 @@ export function OPTIONS() {
 
 /**
  * POST /api/opportunities/:id/claim
- * Machine-to-machine claim. Mirrors the web `claimOpportunity` action but
- * authenticates by API key. Idempotent per (opportunity, agent).
+ * Reserves one of the opportunity's limited slots and starts the clock
+ * (dueAt = now + contract.time_limit_hours). One assignment per agent per
+ * opportunity; a released or expired claim can be re-claimed if a slot is free.
  */
 export async function POST(
   request: NextRequest,
@@ -29,8 +32,8 @@ export async function POST(
 
   const { id } = await params
   const opportunityId = Number(id)
-  if (!Number.isInteger(opportunityId)) {
-    return apiError("Invalid opportunity id", 400)
+  if (!Number.isInteger(opportunityId) || opportunityId <= 0) {
+    return apiError("Invalid opportunity id", 400, { code: "invalid_id" })
   }
 
   const [opp] = await db
@@ -39,11 +42,16 @@ export async function POST(
     .where(eq(opportunity.id, opportunityId))
     .limit(1)
 
-  if (!opp) return apiError("Opportunity not found", 404)
-  if (opp.status !== "open") return apiError("This opportunity is closed", 409)
+  if (!opp) return apiError("Opportunity not found", 404, { code: "not_found" })
+  if (opp.status !== "open") {
+    return apiError("This opportunity is closed", 409, { code: "opportunity_closed" })
+  }
+  if (opp.deadline && opp.deadline.getTime() < Date.now()) {
+    return apiError("This opportunity's deadline has passed", 409, { code: "deadline_passed" })
+  }
 
   const [existing] = await db
-    .select({ id: assignment.id })
+    .select()
     .from(assignment)
     .where(
       and(
@@ -53,24 +61,66 @@ export async function POST(
     )
     .limit(1)
 
-  if (existing) {
-    return apiError("You already claimed this task", 409)
+  const reclaimable =
+    existing && ["released", "expired"].includes(effectiveStatus(existing))
+
+  if (existing && !reclaimable) {
+    return apiError("You already hold an assignment for this opportunity", 409, {
+      code: "already_claimed",
+      assignment_id: existing.id,
+    })
   }
 
-  const [row] = await db
-    .insert(assignment)
-    .values({
-      opportunityId,
-      userId: auth.agent.userId,
-      username: auth.agent.username,
+  const active = await countActiveClaims(opportunityId)
+  if (active >= opp.maxClaims) {
+    return apiError("All claim slots for this opportunity are taken", 409, {
+      code: "no_slots",
+      max_claims: opp.maxClaims,
     })
-    .returning({ id: assignment.id })
+  }
+
+  const contract = parseContract(opp.contract)
+  const now = new Date()
+  const dueAt = computeDueAt(contract, now)
+
+  const fresh = {
+    status: "claimed",
+    deliverable: null,
+    reviewNote: null,
+    rating: null,
+    attempts: 0,
+    disputeReason: null,
+    disputedAt: null,
+    submittedAt: null,
+    reviewedAt: null,
+    claimedAt: now,
+    dueAt,
+  }
+
+  let assignmentId: number
+  if (existing) {
+    await db.update(assignment).set(fresh).where(eq(assignment.id, existing.id))
+    assignmentId = existing.id
+  } else {
+    const [row] = await db
+      .insert(assignment)
+      .values({
+        opportunityId,
+        userId: auth.agent.userId,
+        username: auth.agent.username,
+        ...fresh,
+      })
+      .returning({ id: assignment.id })
+    assignmentId = row.id
+  }
 
   return apiOk(
     {
-      assignment_id: row.id,
+      assignment_id: assignmentId,
       opportunity_id: opportunityId,
       status: "claimed",
+      due_at: dueAt.toISOString(),
+      next: `GET /api/assignments/${assignmentId}`,
     },
     { status: 201 },
   )

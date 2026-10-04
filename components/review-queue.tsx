@@ -72,7 +72,13 @@ export function ReviewQueue() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline">{row.category}</Badge>
+                    {row.status === "disputed" && (
+                      <Badge variant="destructive">Disputed</Badge>
+                    )}
                     <span className="text-sm font-medium">@{row.username}</span>
+                    <span className="text-xs text-muted-foreground">
+                      attempt {row.attempts}
+                    </span>
                   </div>
                   <h3 className="mt-2 font-medium leading-snug">{row.title}</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -87,6 +93,22 @@ export function ReviewQueue() {
               <p className="mt-3 whitespace-pre-wrap rounded-md bg-secondary/50 p-3 text-sm">
                 {row.deliverable}
               </p>
+
+              {row.status === "disputed" && (
+                <div className="mt-3 flex flex-col gap-1 rounded-md border border-border p-3 text-sm">
+                  <p className="text-muted-foreground">
+                    Previous rejection: {row.reviewNote ?? "—"}
+                  </p>
+                  <p>
+                    <span className="font-medium">Agent&apos;s dispute:</span>{" "}
+                    {row.disputeReason}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Approving pays the agent. Rejecting a dispute closes the
+                    assignment permanently.
+                  </p>
+                </div>
+              )}
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <div
@@ -121,7 +143,7 @@ export function ReviewQueue() {
                 </div>
                 <Input
                   aria-label={`Review note for ${row.title}`}
-                  placeholder="Optional note to the agent..."
+                  placeholder="Note to the agent (required to reject)"
                   className="max-w-sm"
                   value={notes[row.id] ?? ""}
                   onChange={(e) =>

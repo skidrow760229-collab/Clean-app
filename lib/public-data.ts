@@ -1,7 +1,13 @@
 import "server-only"
-import { and, desc, eq, sql } from "drizzle-orm"
+import { and, asc, desc, eq, sql } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { agentProfile, assignment, opportunity } from "@/lib/db/schema"
+import {
+  type Contract,
+  parseContract,
+  SLOT_HOLDING,
+  splitList,
+} from "@/lib/lifecycle"
 
 /**
  * Shared read layer for everything public: the /agents and /opportunities
@@ -29,20 +35,39 @@ export type PublicOpportunity = {
   tags: string[]
   status: string
   createdAt: number
+  requiredCapabilities: string[]
+  contract: Contract
+  maxClaims: number
+  activeClaims: number
+  slotsRemaining: number
+  deadline: number | null
+  isDemo: boolean
+  postedBy: string
 }
 
 /**
- * Reputation is derived, never stored: 10 points per approved delivery plus a
- * quality bonus of up to 10 per delivery scaled by its 1-5 rating. This keeps
- * the score tamper-resistant — it always reflects real ledger history.
+ * Reputation is derived, never stored, so it always reflects real history:
+ *   +10 per approved delivery, +2 per rating point (1-5, default 3),
+ *   −5 per delivery whose rejection was upheld (status "closed").
  */
 const REPUTATION_SQL = sql<number>`
-  coalesce(sum(
-    case when ${assignment.status} = 'approved'
-      then 10 + coalesce(${assignment.rating}, 3) * 2
+  greatest(coalesce(sum(
+    case
+      when ${assignment.status} = 'approved' then 10 + coalesce(${assignment.rating}, 3) * 2
+      when ${assignment.status} = 'closed' then -5
       else 0 end
-  ), 0)::int
+  ), 0), 0)::int
 `
+
+const SLOT_LIST = sql.raw(SLOT_HOLDING.map((s) => `'${s}'`).join(","))
+
+/** Active claims holding a slot; past-due "claimed" rows free their slot. */
+const ACTIVE_CLAIMS_SQL = sql<number>`(
+  select count(*)::int from ${assignment} a
+  where a."opportunityId" = ${opportunity.id}
+    and a.status in (${SLOT_LIST})
+    and not (a.status = 'claimed' and a."dueAt" is not null and a."dueAt" < now())
+)`
 
 export async function listPublicAgents(params?: {
   q?: string
@@ -100,7 +125,9 @@ export async function getPublicAgent(
   return rows.find((a) => a.username === username.toLowerCase()) ?? null
 }
 
-function mapOpportunity(r: typeof opportunity.$inferSelect): PublicOpportunity {
+function mapOpportunity(
+  r: typeof opportunity.$inferSelect & { activeClaims: number },
+): PublicOpportunity {
   return {
     id: r.id,
     title: r.title,
@@ -111,38 +138,73 @@ function mapOpportunity(r: typeof opportunity.$inferSelect): PublicOpportunity {
     tags: r.tags ? r.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
     status: r.status,
     createdAt: r.createdAt.getTime(),
+    requiredCapabilities: splitList(r.requiredCapabilities),
+    contract: parseContract(r.contract),
+    maxClaims: r.maxClaims,
+    activeClaims: r.activeClaims,
+    slotsRemaining: Math.max(0, r.maxClaims - r.activeClaims),
+    deadline: r.deadline ? r.deadline.getTime() : null,
+    isDemo: r.isDemo,
+    postedBy: r.postedBy,
   }
 }
+
+export type OpportunitySort = "newest" | "reward"
 
 export async function listPublicOpportunities(params?: {
   status?: string
   category?: string
+  capability?: string
+  sort?: OpportunitySort
   limit?: number
+  offset?: number
 }): Promise<PublicOpportunity[]> {
-  const limit = Math.min(params?.limit ?? 100, 200)
+  const limit = Math.min(Math.max(params?.limit ?? 100, 1), 200)
+  const offset = Math.max(params?.offset ?? 0, 0)
   const filters = []
   if (params?.status) filters.push(eq(opportunity.status, params.status))
   if (params?.category) filters.push(eq(opportunity.category, params.category))
+  const capability = params?.capability?.trim().toLowerCase()
+  if (capability) {
+    filters.push(
+      sql`(',' || lower(${opportunity.requiredCapabilities}) || ',' || lower(${opportunity.tags}) || ',') like ${`%,${capability},%`}`,
+    )
+  }
 
   const rows = await db
-    .select()
+    .select({ o: opportunity, activeClaims: ACTIVE_CLAIMS_SQL })
     .from(opportunity)
     .where(filters.length ? and(...filters) : undefined)
-    .orderBy(desc(opportunity.createdAt))
+    .orderBy(
+      params?.sort === "reward"
+        ? desc(opportunity.rewardCredits)
+        : desc(opportunity.createdAt),
+      asc(opportunity.id),
+    )
     .limit(limit)
+    .offset(offset)
 
-  return rows.map(mapOpportunity)
+  return rows.map((r) => mapOpportunity({ ...r.o, activeClaims: r.activeClaims }))
 }
 
 export async function getPublicOpportunity(
   id: number,
 ): Promise<PublicOpportunity | null> {
   const [row] = await db
-    .select()
+    .select({ o: opportunity, activeClaims: ACTIVE_CLAIMS_SQL })
     .from(opportunity)
     .where(eq(opportunity.id, id))
     .limit(1)
-  return row ? mapOpportunity(row) : null
+  return row ? mapOpportunity({ ...row.o, activeClaims: row.activeClaims }) : null
+}
+
+/** Active claim count for one opportunity (used to enforce maxClaims). */
+export async function countActiveClaims(opportunityId: number) {
+  const [row] = await db
+    .select({ n: ACTIVE_CLAIMS_SQL })
+    .from(opportunity)
+    .where(eq(opportunity.id, opportunityId))
+  return row?.n ?? 0
 }
 
 /** Derived reputation for a single agent by userId (same formula as the list). */
@@ -150,6 +212,12 @@ export async function getReputation(userId: string): Promise<{
   score: number
   completed: number
   avgRating: number | null
+  rejectedFinal: number
+  disputes: number
+  /** approved / (approved + rejected-final); null until something is decided. */
+  successRate: number | null
+  /** approved deliveries submitted before their due time. */
+  onTimeRate: number | null
 }> {
   const [row] = await db
     .select({
@@ -158,14 +226,24 @@ export async function getReputation(userId: string): Promise<{
       avgRating: sql<
         number | null
       >`avg(${assignment.rating}) filter (where ${assignment.status} = 'approved')`,
+      rejectedFinal: sql<number>`count(*) filter (where ${assignment.status} = 'closed')::int`,
+      disputes: sql<number>`count(*) filter (where ${assignment.disputedAt} is not null)::int`,
+      onTime: sql<number>`count(*) filter (where ${assignment.status} = 'approved' and (${assignment.dueAt} is null or ${assignment.submittedAt} <= ${assignment.dueAt}))::int`,
     })
     .from(assignment)
     .where(eq(assignment.userId, userId))
 
+  const completed = row?.completed ?? 0
+  const rejectedFinal = row?.rejectedFinal ?? 0
+  const decided = completed + rejectedFinal
   return {
     score: row?.score ?? 0,
-    completed: row?.completed ?? 0,
+    completed,
     avgRating: row?.avgRating != null ? Number(Number(row.avgRating).toFixed(2)) : null,
+    rejectedFinal,
+    disputes: row?.disputes ?? 0,
+    successRate: decided ? Number((completed / decided).toFixed(3)) : null,
+    onTimeRate: completed ? Number(((row?.onTime ?? 0) / completed).toFixed(3)) : null,
   }
 }
 

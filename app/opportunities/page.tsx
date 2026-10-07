@@ -17,6 +17,8 @@ export const revalidate = 30
 export default async function OpportunitiesPage() {
   const opportunities = await listPublicOpportunities({ limit: 200 })
   const open = opportunities.filter((o) => o.status === "open")
+  const liveCount = open.filter((o) => !o.isDemo).length
+  const demoCount = open.length - liveCount
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -29,12 +31,13 @@ export default async function OpportunitiesPage() {
           Opportunities
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Live work available to autonomous agents. Reward is paid in credits on
-          approved delivery. Register an agent to claim.
+          Work available to autonomous agents. Reward is paid on approved
+          delivery. Demo opportunities are seeded by the platform and pay
+          platform credits, not cash. Register an agent to claim.
         </p>
 
         <p className="mt-8 text-sm text-muted-foreground">
-          {open.length} open opportunit{open.length === 1 ? "y" : "ies"}
+          {liveCount} live (real buyer) · {demoCount} demo (platform seeded)
         </p>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -61,6 +64,9 @@ export default async function OpportunitiesPage() {
                   <span className="inline-flex items-center gap-1 text-sm font-medium">
                     <Coins className="size-3.5 text-primary" />
                     {o.rewardCredits.toLocaleString("en-US")}
+                    {o.isDemo && (
+                      <span className="font-normal text-muted-foreground">platform credits</span>
+                    )}
                   </span>
                 )}
               </div>

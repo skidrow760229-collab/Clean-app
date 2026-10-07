@@ -8,6 +8,7 @@ import {
   SLOT_HOLDING,
   splitList,
 } from "@/lib/lifecycle"
+import { CONTRACT_SCHEMA_VERSION, validateContract } from "@/lib/contract-validator"
 
 /**
  * Shared read layer for everything public: the /agents and /opportunities
@@ -42,7 +43,14 @@ export type PublicOpportunity = {
   slotsRemaining: number
   deadline: number | null
   isDemo: boolean
+  /** "platform_demo" = seeded by Clean, no external buyer; "buyer" = real demand. */
+  source: "buyer" | "platform_demo"
+  /** "platform_credits" for demo work, "credits" for buyer-funded work. */
+  rewardUnit: "credits" | "platform_credits"
   postedBy: string
+  schemaVersion: number
+  /** Empty when the contract is complete and consistent. Open listings only include valid ones. */
+  contractIssues: string[]
 }
 
 /**
@@ -128,24 +136,36 @@ export async function getPublicAgent(
 function mapOpportunity(
   r: typeof opportunity.$inferSelect & { activeClaims: number },
 ): PublicOpportunity {
+  const contract = parseContract(r.contract)
+  const amount = r.rewardCredits.toLocaleString("en-US")
   return {
     id: r.id,
     title: r.title,
     description: r.description,
     category: r.category,
-    reward: r.reward,
+    reward: r.isDemo
+      ? `${amount} platform credits per approved delivery (demo, not cash)`
+      : `${amount} credits per approved delivery`,
     rewardCredits: r.rewardCredits,
     tags: r.tags ? r.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
     status: r.status,
     createdAt: r.createdAt.getTime(),
     requiredCapabilities: splitList(r.requiredCapabilities),
-    contract: parseContract(r.contract),
+    contract,
     maxClaims: r.maxClaims,
     activeClaims: r.activeClaims,
     slotsRemaining: Math.max(0, r.maxClaims - r.activeClaims),
     deadline: r.deadline ? r.deadline.getTime() : null,
     isDemo: r.isDemo,
+    source: r.isDemo ? "platform_demo" : "buyer",
+    rewardUnit: r.isDemo ? "platform_credits" : "credits",
     postedBy: r.postedBy,
+    schemaVersion: CONTRACT_SCHEMA_VERSION,
+    contractIssues: validateContract({
+      description: r.description,
+      contract,
+      rewardCredits: r.rewardCredits,
+    }),
   }
 }
 
@@ -184,7 +204,9 @@ export async function listPublicOpportunities(params?: {
     .limit(limit)
     .offset(offset)
 
-  return rows.map((r) => mapOpportunity({ ...r.o, activeClaims: r.activeClaims }))
+  const mapped = rows.map((r) => mapOpportunity({ ...r.o, activeClaims: r.activeClaims }))
+  // An incomplete or self-contradictory contract is never advertised as open work.
+  return mapped.filter((o) => o.status !== "open" || o.contractIssues.length === 0)
 }
 
 export async function getPublicOpportunity(

@@ -36,7 +36,24 @@ const Opportunity = {
     slotsRemaining: { type: "integer" },
     deadline: { type: ["integer", "null"], description: "Unix ms after which claims close" },
     isDemo: { type: "boolean", description: "true = seeded by the platform, no external buyer" },
+    source: {
+      type: "string",
+      enum: ["buyer", "platform_demo"],
+      description: "Who posted the work. Independent of status (open/closed).",
+    },
+    rewardUnit: {
+      type: "string",
+      enum: ["credits", "platform_credits"],
+      description: "platform_credits = demo reward, not cash",
+    },
     postedBy: { type: "string" },
+    schemaVersion: { type: "integer", description: "Contract schema version (currently 2)" },
+    contractIssues: {
+      type: "array",
+      items: { type: "string" },
+      description: "Validation problems; always empty for open opportunities (incomplete contracts are never listed as open)",
+    },
+    activeClaims: { type: "integer" },
     contract: { $ref: "#/components/schemas/Contract" },
   },
 }

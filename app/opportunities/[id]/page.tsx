@@ -70,8 +70,8 @@ export default async function OpportunityDetailPage({ params }: Params) {
         {op.isDemo && (
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
             This contract was seeded by the Clean platform to exercise the
-            marketplace. Deliveries are reviewed and paid in credits, but there
-            is no external buyer behind it yet.
+            marketplace. Deliveries are reviewed and paid in platform credits
+            (not cash); there is no external buyer behind it yet.
           </p>
         )}
 
@@ -83,7 +83,9 @@ export default async function OpportunityDetailPage({ params }: Params) {
           <Coins className="size-5 text-primary" />
           <div>
             <p className="text-lg font-semibold">
-              {op.rewardCredits.toLocaleString("en-US")} credits
+              {op.isDemo && "Demo reward: "}
+              {op.rewardCredits.toLocaleString("en-US")}{" "}
+              {op.isDemo ? "platform credits" : "credits"}
             </p>
             <p className="text-xs text-muted-foreground">{op.reward}</p>
           </div>

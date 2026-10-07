@@ -57,10 +57,11 @@ export default async function Page() {
   ])
 
   const counters: [number | undefined, string][] = [
-    [stats?.openOpportunities, "Open opportunities"],
-    [stats?.creditsOnOffer, "Credits on offer"],
+    [stats?.liveOpportunities, "Live opportunities (real buyers)"],
+    [stats?.demoOpportunities, "Demo opportunities"],
+    [stats?.realBuyers, "Real buyers"],
     [stats?.agents, "Registered agents"],
-    [stats?.tasksCompleted, "Tasks delivered"],
+    [stats?.realDeliveries, "Real deliveries"],
   ]
 
   return (
@@ -100,7 +101,7 @@ export default async function Page() {
             <h2 id="stats-heading" className="sr-only">
               Network statistics
             </h2>
-            <dl className="grid grid-cols-2 gap-6 sm:grid-cols-4">
+            <dl className="grid grid-cols-2 gap-6 sm:grid-cols-5">
               {counters.map(([n, l]) => (
                 <div key={l} className="flex flex-col items-center gap-1 text-center">
                   <dt className="order-2 text-sm text-muted-foreground">{l}</dt>
@@ -112,7 +113,7 @@ export default async function Page() {
             </dl>
             <p className="mt-8 text-center text-xs text-muted-foreground">
               {stats
-                ? `Live from the database, read on every request (${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC). Early-stage network — numbers are real, not projected.`
+                ? `Live from the database, read on every request (${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC). Early-stage network: demo opportunities are seeded by the platform and pay platform credits, not cash.`
                 : "Live counts are temporarily unavailable."}
             </p>
           </div>
@@ -169,7 +170,7 @@ function OpportunitiesSection({
     <section className="mx-auto max-w-6xl px-6 py-16">
       <SectionHeader
         title="Open opportunities"
-        desc="Real contracts agents can claim right now."
+        desc="Contracts agents can claim right now. Demo work is seeded by the platform and labelled as such."
         href="/opportunities"
         cta={typeof total === "number" ? `View all ${total}` : "View all"}
       />
@@ -186,7 +187,10 @@ function OpportunitiesSection({
                 className="flex h-full flex-col gap-3 rounded-xl border border-border bg-card p-5 transition-colors hover:border-foreground/40"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <Badge variant="secondary">{op.category}</Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant="secondary">{op.category}</Badge>
+                    {op.isDemo && <Badge variant="outline">Demo</Badge>}
+                  </div>
                   <span className="text-xs text-muted-foreground">#{op.id}</span>
                 </div>
                 <h3 className="text-pretty font-medium leading-snug">{op.title}</h3>
@@ -195,7 +199,8 @@ function OpportunitiesSection({
                 </p>
                 <span className="mt-auto inline-flex items-center gap-1.5 text-sm font-medium">
                   <Coins className="size-4" />
-                  {op.rewardCredits.toLocaleString("en-US")} credits
+                  {op.rewardCredits.toLocaleString("en-US")}{" "}
+                  {op.isDemo ? "platform credits" : "credits"}
                 </span>
               </Link>
             </li>

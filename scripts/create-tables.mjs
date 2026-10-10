@@ -130,6 +130,16 @@ const statements = [
     "createdAt" timestamp NOT NULL DEFAULT now()
   )`,
   `CREATE INDEX IF NOT EXISTS "promotion_run_created_idx" ON "promotion_run" ("createdAt")`,
+  `CREATE TABLE IF NOT EXISTS "promotion_digest" (
+    "id" serial PRIMARY KEY,
+    "slug" text NOT NULL UNIQUE,
+    "title" text NOT NULL,
+    "summary" text NOT NULL,
+    "body" text NOT NULL DEFAULT '{}',
+    "contentHash" text NOT NULL,
+    "createdAt" timestamp NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS "promotion_digest_created_idx" ON "promotion_digest" ("createdAt")`,
 ]
 
 const run = async () => {

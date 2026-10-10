@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Fragment, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import useSWR from "swr"
 import { TopNav } from "@/components/top-nav"
@@ -215,7 +215,7 @@ export default function AdminPage() {
             </Button>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {"每 6 小时自动向 IndexNow（Bing / Yandex / Seznam / Naver）提交市场 URL，并真实探测发现端点存活。IndexNow key："}
+            {"每天 09:00 UTC 自动运行，21:00 UTC 兜底补跑(当天已成功则跳过)。每轮先读取端点健康、数据变化、周目标与上次提交结果，再自主决定：发布每日简报 / IndexNow 全量或增量提交 / WebSub 通知，并记录每项决策理由。IndexNow key："}
             <code className="ml-1 break-all text-xs">{promo?.keyLocation ?? "—"}</code>
           </p>
 
@@ -288,7 +288,8 @@ export default function AdminPage() {
                   </tr>
                 ) : (
                   promo.runs.map((r: (typeof promo.runs)[number]) => (
-                    <tr key={r.id} className="border-t border-border">
+                    <Fragment key={r.id}>
+                    <tr className="border-t border-border">
                       <td className="px-4 py-3 text-muted-foreground">
                         {new Date(r.createdAt).toLocaleString()}
                       </td>
@@ -318,6 +319,40 @@ export default function AdminPage() {
                         )}
                       </td>
                     </tr>
+                    {r.decisions.length > 0 && (
+                      <tr className="bg-secondary/20">
+                        <td colSpan={6} className="px-4 pb-3 pt-1">
+                          <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+                            {r.mode && (
+                              <li>
+                                <span className="font-medium text-foreground">
+                                  {r.mode === "boost" ? "加速模式" : "常规模式"}
+                                </span>
+                                {r.modeReason ? ` · ${r.modeReason}` : null}
+                              </li>
+                            )}
+                            {r.decisions.map((d) => (
+                              <li key={d.action} className="flex gap-2">
+                                <span
+                                  className={
+                                    d.ok === false
+                                      ? "text-destructive"
+                                      : d.executed
+                                        ? "text-emerald-600 dark:text-emerald-400"
+                                        : ""
+                                  }
+                                >
+                                  {d.executed ? (d.ok === false ? "失败" : "执行") : "跳过"}
+                                </span>
+                                <span className="font-mono">{d.action}</span>
+                                <span>{d.reason}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))
                 )}
               </tbody>

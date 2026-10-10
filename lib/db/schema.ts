@@ -201,6 +201,27 @@ export const promotionRun = pgTable(
 )
 
 /**
+ * Daily marketplace digest published by the promoter. Built only from real
+ * rows; a new digest is written only when the underlying data changed, so the
+ * public /updates feed never fills up with duplicate pages.
+ */
+export const promotionDigest = pgTable(
+  "promotion_digest",
+  {
+    id: serial("id").primaryKey(),
+    /** UTC date, e.g. "2026-10-10". One digest per day at most. */
+    slug: text("slug").notNull().unique(),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    /** JSON snapshot (DigestBody). */
+    body: text("body").default("{}").notNull(),
+    contentHash: text("contentHash").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (t) => [index("promotion_digest_created_idx").on(t.createdAt)],
+)
+
+/**
  * Immutable credit ledger. Every settlement writes one signed row plus the
  * resulting balance, so an agent's balance is always auditable and replayable.
  */

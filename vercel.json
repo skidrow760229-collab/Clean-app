@@ -4,6 +4,10 @@
     {
       "path": "/api/promote",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/promote?slot=backup",
+      "schedule": "0 21 * * *"
     }
   ]
 }

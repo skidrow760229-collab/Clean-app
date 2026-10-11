@@ -37,7 +37,15 @@ export default async function OpportunityDetailPage({ params }: Params) {
   const c = op.contract
   const canClaim = op.status === "open" && op.slotsRemaining > 0
   const facts: [string, string][] = [
-    ["Reward basis", c.reward_basis ?? "Paid once per approved delivery"],
+    [
+      "Reward basis",
+      op.pricing.offPlatform
+        ? op.pricing.model === "free"
+          ? "Free — no payment"
+          : "Paid by the poster off-platform, once per approved delivery"
+        : (c.reward_basis ?? "Paid once per approved delivery"),
+    ],
+    ["Reviewed by", op.pricing.offPlatform ? "The poster (disputes ruled by Clean)" : "Clean"],
     ["Slots", `${op.slotsRemaining} of ${op.maxClaims} open`],
     ["Time limit after claim", `${c.time_limit_hours ?? DEFAULT_TIME_LIMIT_HOURS} hours`],
     ["Estimated effort", c.estimated_effort_hours ? `~${c.estimated_effort_hours} hours` : "Not stated"],
@@ -83,13 +91,64 @@ export default async function OpportunityDetailPage({ params }: Params) {
           <Coins className="size-5 text-primary" />
           <div>
             <p className="text-lg font-semibold">
-              {op.isDemo && "Demo reward: "}
-              {op.rewardCredits.toLocaleString("en-US")}{" "}
-              {op.isDemo ? "platform credits" : "credits"}
+              {op.pricing.offPlatform ? (
+                op.price
+              ) : (
+                <>
+                  {op.isDemo && "Demo reward: "}
+                  {op.rewardCredits.toLocaleString("en-US")}{" "}
+                  {op.isDemo ? "platform credits" : "credits"}
+                </>
+              )}
             </p>
             <p className="text-xs text-muted-foreground">{op.reward}</p>
           </div>
         </div>
+
+        {op.pricing.offPlatform && (
+          <section
+            aria-labelledby="settlement-heading"
+            className="mt-4 rounded-lg border border-border bg-card px-4 py-4 text-sm"
+          >
+            <h2 id="settlement-heading" className="font-medium">
+              Settlement — directly between poster and worker
+            </h2>
+            <p className="mt-1 leading-relaxed text-muted-foreground">
+              Clean does not hold or move this payment. If you disagree on whether the
+              work was completed or whether payment is owed, open a dispute and Clean
+              rules on it. Rulings are public on the poster&apos;s record.
+            </p>
+            {op.pricing.model !== "free" && (
+              <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Method</dt>
+                  <dd>{op.pricing.settlementMethod ?? "Not stated"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Terms</dt>
+                  <dd>{op.pricing.settlementTerms ?? "Not stated"}</dd>
+                </div>
+              </dl>
+            )}
+            {op.posterRecord && (
+              <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-border pt-3 sm:grid-cols-4">
+                {(
+                  [
+                    ["Approved deliveries", op.posterRecord.approvedDeliveries],
+                    ["Payments confirmed", op.posterRecord.paymentsConfirmed],
+                    ["Payments outstanding", op.posterRecord.paymentsOutstanding],
+                    ["Rulings against poster", op.posterRecord.rulingsAgainst],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className="font-medium tabular-nums">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </section>
+        )}
 
         <div className="mt-8">
           <h2 className="text-sm font-medium text-muted-foreground">

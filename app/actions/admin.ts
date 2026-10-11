@@ -1,6 +1,9 @@
 "use server"
 
-import { and, count, desc, eq, inArray } from "drizzle-orm"
+import { and, count, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm"
+import { closeOpportunityIfFull } from "@/lib/assignments"
+import { parseContract } from "@/lib/lifecycle"
+import { applyRuling, priceLabel, type DisputeType, type Ruling } from "@/lib/settlement"
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import {
@@ -149,13 +152,104 @@ export async function listSubmissions() {
     })
     .from(assignment)
     .innerJoin(opportunity, eq(opportunity.id, assignment.opportunityId))
-    .where(inArray(assignment.status, ["submitted", "disputed"]))
+    // Agent-posted work is reviewed by its poster; its disputes go to listDisputes.
+    .where(
+      and(
+        inArray(assignment.status, ["submitted", "disputed"]),
+        isNull(opportunity.posterUserId),
+      ),
+    )
     .orderBy(desc(assignment.submittedAt))
 
   return rows.map((r) => ({
     ...r,
     submittedAt: r.submittedAt ? r.submittedAt.getTime() : null,
   }))
+}
+
+/** Open disputes on agent-posted, off-platform-settled work, awaiting Clean's ruling. */
+export async function listDisputes() {
+  await requireAdmin()
+
+  const rows = await db
+    .select({ a: assignment, o: opportunity })
+    .from(assignment)
+    .innerJoin(opportunity, eq(opportunity.id, assignment.opportunityId))
+    .where(and(eq(assignment.status, "disputed"), isNotNull(opportunity.posterUserId)))
+    .orderBy(desc(assignment.disputedAt))
+
+  return rows.map(({ a, o }) => {
+    const contract = parseContract(o.contract)
+    return {
+      id: a.id,
+      opportunityId: o.id,
+      title: o.title,
+      poster: o.postedBy,
+      worker: a.username,
+      price: priceLabel(o),
+      settlementMethod: o.settlementMethod,
+      settlementTerms: o.settlementTerms,
+      type: a.disputeType ?? "rejection",
+      reason: a.disputeReason,
+      posterResponse: a.disputeResponse,
+      reviewNote: a.reviewNote,
+      deliverable: a.deliverable,
+      paymentReference: a.paymentReference,
+      settlementStatus: a.settlementStatus,
+      acceptanceCriteria: contract.acceptance_criteria ?? [],
+      requirements: contract.requirements ?? [],
+      disputedAt: a.disputedAt ? a.disputedAt.getTime() : null,
+      submittedAt: a.submittedAt ? a.submittedAt.getTime() : null,
+    }
+  })
+}
+
+/**
+ * Clean's ruling on an off-platform dispute. "payment_due" means the work is
+ * accepted and the stated price is owed; "not_due" upholds the poster.
+ * Clean never moves the money — the ruling is recorded publicly and counts
+ * toward the poster's payment record.
+ */
+export async function ruleDispute(assignmentId: number, ruling: Ruling, note: string) {
+  await requireAdmin()
+  if (ruling !== "payment_due" && ruling !== "not_due") {
+    return { ok: false as const, error: "Unknown ruling" }
+  }
+  if (note.trim().length < 10) {
+    return { ok: false as const, error: "Explain the ruling (at least 10 characters) — both parties see it." }
+  }
+
+  const [row] = await db
+    .select({ a: assignment, o: opportunity })
+    .from(assignment)
+    .innerJoin(opportunity, eq(opportunity.id, assignment.opportunityId))
+    .where(eq(assignment.id, assignmentId))
+    .limit(1)
+  if (!row || !row.o.posterUserId) return { ok: false as const, error: "Dispute not found" }
+  if (row.a.status !== "disputed") return { ok: false as const, error: "This dispute is already resolved" }
+
+  const type = (row.a.disputeType ?? "rejection") as DisputeType
+  const outcome = applyRuling(type, ruling, row.o.pricingModel)
+  const now = new Date()
+  await db
+    .update(assignment)
+    .set({
+      status: outcome.status,
+      settlementStatus: outcome.settlementStatus,
+      ruling,
+      rulingNote: note.trim().slice(0, 1000),
+      ruledAt: now,
+      // A ruling that overturns a rejection / missing review counts as the acceptance.
+      ...(type !== "non_payment" && outcome.status === "approved" ? { reviewedAt: now } : {}),
+    })
+    .where(eq(assignment.id, assignmentId))
+
+  if (outcome.status === "approved") await closeOpportunityIfFull(row.o.id, row.o.maxClaims)
+
+  revalidatePath("/admin")
+  revalidatePath(`/opportunities/${row.o.id}`)
+  revalidatePath(`/agents/${row.a.username}`)
+  return { ok: true as const }
 }
 
 /** Approve or reject a submitted deliverable. */
@@ -227,23 +321,7 @@ export async function reviewSubmission(
   }
 
   // Close the opportunity once every slot has produced an approved delivery.
-  if (decision === "approved") {
-    const [approved] = await db
-      .select({ n: count() })
-      .from(assignment)
-      .where(
-        and(
-          eq(assignment.opportunityId, row.opportunityId),
-          eq(assignment.status, "approved"),
-        ),
-      )
-    if ((approved?.n ?? 0) >= row.maxClaims) {
-      await db
-        .update(opportunity)
-        .set({ status: "closed" })
-        .where(eq(opportunity.id, row.opportunityId))
-    }
-  }
+  if (decision === "approved") await closeOpportunityIfFull(row.opportunityId, row.maxClaims)
 
   revalidatePath("/admin")
   revalidatePath("/dashboard")

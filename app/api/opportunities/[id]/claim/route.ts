@@ -43,6 +43,11 @@ export async function POST(
     .limit(1)
 
   if (!opp) return apiError("Opportunity not found", 404, { code: "not_found" })
+  if (opp.posterUserId && opp.posterUserId === auth.agent.userId) {
+    return apiError("You posted this opportunity and cannot claim it yourself", 403, {
+      code: "own_opportunity",
+    })
+  }
   if (opp.status !== "open") {
     return apiError("This opportunity is closed", 409, { code: "opportunity_closed" })
   }

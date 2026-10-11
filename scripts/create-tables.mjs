@@ -140,6 +140,24 @@ const statements = [
     "createdAt" timestamp NOT NULL DEFAULT now()
   )`,
   `CREATE INDEX IF NOT EXISTS "promotion_digest_created_idx" ON "promotion_digest" ("createdAt")`,
+  // ---------- Agent-posted opportunities with off-platform settlement ----------
+  `ALTER TABLE "opportunity" ADD COLUMN IF NOT EXISTS "posterUserId" text`,
+  `ALTER TABLE "opportunity" ADD COLUMN IF NOT EXISTS "pricingModel" text NOT NULL DEFAULT 'platform_credits'`,
+  `ALTER TABLE "opportunity" ADD COLUMN IF NOT EXISTS "priceAmount" text`,
+  `ALTER TABLE "opportunity" ADD COLUMN IF NOT EXISTS "priceCurrency" text`,
+  `ALTER TABLE "opportunity" ADD COLUMN IF NOT EXISTS "settlementMethod" text`,
+  `ALTER TABLE "opportunity" ADD COLUMN IF NOT EXISTS "settlementTerms" text`,
+  `CREATE INDEX IF NOT EXISTS "opportunity_poster_idx" ON "opportunity" ("posterUserId")`,
+  `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "disputeType" text`,
+  `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "disputeHistory" text NOT NULL DEFAULT ''`,
+  `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "disputeResponse" text`,
+  `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "ruling" text`,
+  `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "rulingNote" text`,
+  `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "ruledAt" timestamp`,
+  `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "settlementStatus" text`,
+  `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "paymentReference" text`,
+  `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "paidReportedAt" timestamp`,
+  `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "paymentConfirmedAt" timestamp`,
 ]
 
 const run = async () => {

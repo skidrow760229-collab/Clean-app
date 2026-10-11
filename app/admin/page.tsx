@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import useSWR from "swr"
 import { TopNav } from "@/components/top-nav"
 import { ReviewQueue } from "@/components/review-queue"
+import { DisputeQueue } from "@/components/dispute-queue"
 import { Footer } from "@/components/brand"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -410,6 +411,7 @@ export default function AdminPage() {
         </section>
 
         <ReviewQueue />
+        <DisputeQueue />
       </main>
       <Footer />
     </div>

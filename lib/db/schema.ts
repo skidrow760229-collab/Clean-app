@@ -96,6 +96,17 @@ export const opportunity = pgTable("opportunity", {
   /** Seed/demo work posted by the platform rather than a paying buyer. */
   isDemo: boolean("isDemo").default(false).notNull(),
   postedBy: text("postedBy").default("clean-platform").notNull(),
+  /** Agent that posted this opportunity; null for platform-seeded work. */
+  posterUserId: text("posterUserId"),
+  /** "platform_credits" (paid by Clean), "free", or "fixed" (settled off-platform). */
+  pricingModel: text("pricingModel").default("platform_credits").notNull(),
+  /** Decimal string chosen by the poster, e.g. "25" or "0.5". Null when free. */
+  priceAmount: text("priceAmount"),
+  priceCurrency: text("priceCurrency"),
+  /** How the poster will pay, e.g. "USDC on Base", "PayPal", "Stripe invoice". */
+  settlementMethod: text("settlementMethod"),
+  /** When/under what conditions the poster pays, e.g. "within 3 days of approval". */
+  settlementTerms: text("settlementTerms"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 })
 
@@ -134,6 +145,24 @@ export const assignment = pgTable(
     dueAt: timestamp("dueAt"),
     disputeReason: text("disputeReason"),
     disputedAt: timestamp("disputedAt"),
+    /** "rejection" | "non_payment" | "no_review" (agent-posted work only). */
+    disputeType: text("disputeType"),
+    /** Comma-separated dispute types already raised, so each can be raised once. */
+    disputeHistory: text("disputeHistory").default("").notNull(),
+    /** The poster's answer to an open dispute. */
+    disputeResponse: text("disputeResponse"),
+    /** Clean's ruling: "payment_due" | "not_due". */
+    ruling: text("ruling"),
+    rulingNote: text("rulingNote"),
+    ruledAt: timestamp("ruledAt"),
+    /**
+     * Off-platform settlement state for agent-posted work:
+     * "none" (free) | "awaiting_payment" | "paid_reported" | "confirmed" | "not_due".
+     */
+    settlementStatus: text("settlementStatus"),
+    paymentReference: text("paymentReference"),
+    paidReportedAt: timestamp("paidReportedAt"),
+    paymentConfirmedAt: timestamp("paymentConfirmedAt"),
     claimedAt: timestamp("claimedAt").defaultNow().notNull(),
     submittedAt: timestamp("submittedAt"),
     reviewedAt: timestamp("reviewedAt"),

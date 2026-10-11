@@ -9,6 +9,47 @@ import {
   splitList,
 } from "@/lib/lifecycle"
 import { CONTRACT_SCHEMA_VERSION, validateContract } from "@/lib/contract-validator"
+import { isAgentPosted, priceLabel } from "@/lib/settlement"
+
+export type PosterRecord = {
+  posted: number
+  approvedDeliveries: number
+  /** Deliveries the worker confirmed were paid. */
+  paymentsConfirmed: number
+  /** Approved, priced deliveries not yet confirmed paid. */
+  paymentsOutstanding: number
+  /** Disputes Clean ruled in the worker's favour (payment was owed). */
+  rulingsAgainst: number
+  rulingsInFavour: number
+}
+
+/**
+ * Public payment record of an agent acting as a poster. Clean cannot force an
+ * off-platform payment, so this record is the enforcement: every ruling and
+ * every unconfirmed payment is visible to agents deciding whether to claim.
+ */
+export async function getPosterRecord(posterUserId: string): Promise<PosterRecord> {
+  const [row] = await db
+    .select({
+      posted: sql<number>`count(distinct ${opportunity.id})::int`,
+      approved: sql<number>`count(${assignment.id}) filter (where ${assignment.status} = 'approved')::int`,
+      confirmed: sql<number>`count(${assignment.id}) filter (where ${assignment.settlementStatus} = 'confirmed')::int`,
+      outstanding: sql<number>`count(${assignment.id}) filter (where ${assignment.status} in ('approved','disputed') and ${assignment.settlementStatus} in ('awaiting_payment','paid_reported'))::int`,
+      against: sql<number>`count(${assignment.id}) filter (where ${assignment.ruling} = 'payment_due')::int`,
+      favour: sql<number>`count(${assignment.id}) filter (where ${assignment.ruling} = 'not_due')::int`,
+    })
+    .from(opportunity)
+    .leftJoin(assignment, eq(assignment.opportunityId, opportunity.id))
+    .where(eq(opportunity.posterUserId, posterUserId))
+  return {
+    posted: row?.posted ?? 0,
+    approvedDeliveries: row?.approved ?? 0,
+    paymentsConfirmed: row?.confirmed ?? 0,
+    paymentsOutstanding: row?.outstanding ?? 0,
+    rulingsAgainst: row?.against ?? 0,
+    rulingsInFavour: row?.favour ?? 0,
+  }
+}
 
 /**
  * Shared read layer for everything public: the /agents and /opportunities
@@ -43,14 +84,31 @@ export type PublicOpportunity = {
   slotsRemaining: number
   deadline: number | null
   isDemo: boolean
-  /** "platform_demo" = seeded by Clean, no external buyer; "buyer" = real demand. */
-  source: "buyer" | "platform_demo"
-  /** "platform_credits" for demo work, "credits" for buyer-funded work. */
-  rewardUnit: "credits" | "platform_credits"
+  /**
+   * "platform_demo" = seeded by Clean, no external buyer;
+   * "agent" = posted by another agent that pays off-platform;
+   * "buyer" = other real demand paid in Clean credits.
+   */
+  source: "buyer" | "platform_demo" | "agent"
+  /** "platform_credits" for demo work, "credits" for credit-funded work, "off_platform" for agent-priced work. */
+  rewardUnit: "credits" | "platform_credits" | "off_platform"
+  /** Short price label, e.g. "25 USDC", "Free", "2,900 platform credits". */
+  price: string
+  pricing: {
+    model: string
+    amount: string | null
+    currency: string | null
+    settlementMethod: string | null
+    settlementTerms: string | null
+    /** True when Clean does not move the money; poster and worker settle directly. */
+    offPlatform: boolean
+  }
   postedBy: string
   schemaVersion: number
   /** Empty when the contract is complete and consistent. Open listings only include valid ones. */
   contractIssues: string[]
+  /** Poster's public payment record; only on single-opportunity reads of agent-posted work. */
+  posterRecord?: PosterRecord
 }
 
 /**
@@ -138,14 +196,29 @@ function mapOpportunity(
 ): PublicOpportunity {
   const contract = parseContract(r.contract)
   const amount = r.rewardCredits.toLocaleString("en-US")
+  const agentPosted = isAgentPosted(r)
+  const price = priceLabel(r)
   return {
     id: r.id,
     title: r.title,
     description: r.description,
     category: r.category,
-    reward: r.isDemo
-      ? `${amount} platform credits per approved delivery (demo, not cash)`
-      : `${amount} credits per approved delivery`,
+    reward: agentPosted
+      ? r.pricingModel === "free"
+        ? "Free — no payment for this work"
+        : `${price} per approved delivery, paid by the poster off-platform`
+      : r.isDemo
+        ? `${amount} platform credits per approved delivery (demo, not cash)`
+        : `${amount} credits per approved delivery`,
+    price,
+    pricing: {
+      model: r.pricingModel,
+      amount: r.priceAmount,
+      currency: r.priceCurrency,
+      settlementMethod: r.settlementMethod,
+      settlementTerms: r.settlementTerms,
+      offPlatform: agentPosted,
+    },
     rewardCredits: r.rewardCredits,
     tags: r.tags ? r.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
     status: r.status,
@@ -157,14 +230,15 @@ function mapOpportunity(
     slotsRemaining: Math.max(0, r.maxClaims - r.activeClaims),
     deadline: r.deadline ? r.deadline.getTime() : null,
     isDemo: r.isDemo,
-    source: r.isDemo ? "platform_demo" : "buyer",
-    rewardUnit: r.isDemo ? "platform_credits" : "credits",
+    source: agentPosted ? "agent" : r.isDemo ? "platform_demo" : "buyer",
+    rewardUnit: agentPosted ? "off_platform" : r.isDemo ? "platform_credits" : "credits",
     postedBy: r.postedBy,
     schemaVersion: CONTRACT_SCHEMA_VERSION,
     contractIssues: validateContract({
       description: r.description,
       contract,
-      rewardCredits: r.rewardCredits,
+      // Agent-priced work is not paid in credits, so there is no credit amount to check.
+      rewardCredits: agentPosted ? undefined : r.rewardCredits,
     }),
   }
 }
@@ -217,7 +291,10 @@ export async function getPublicOpportunity(
     .from(opportunity)
     .where(eq(opportunity.id, id))
     .limit(1)
-  return row ? mapOpportunity({ ...row.o, activeClaims: row.activeClaims }) : null
+  if (!row) return null
+  const mapped = mapOpportunity({ ...row.o, activeClaims: row.activeClaims })
+  if (row.o.posterUserId) mapped.posterRecord = await getPosterRecord(row.o.posterUserId)
+  return mapped
 }
 
 /** Active claim count for one opportunity (used to enforce maxClaims). */

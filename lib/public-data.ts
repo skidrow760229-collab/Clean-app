@@ -298,8 +298,11 @@ export async function getPublicOpportunity(
 }
 
 /** Active claim count for one opportunity (used to enforce maxClaims). */
-export async function countActiveClaims(opportunityId: number) {
-  const [row] = await db
+export async function countActiveClaims(
+  opportunityId: number,
+  executor: Pick<typeof db, "select"> = db,
+) {
+  const [row] = await executor
     .select({ n: ACTIVE_CLAIMS_SQL })
     .from(opportunity)
     .where(eq(opportunity.id, opportunityId))

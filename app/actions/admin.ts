@@ -231,7 +231,7 @@ export async function ruleDispute(assignmentId: number, ruling: Ruling, note: st
   const type = (row.a.disputeType ?? "rejection") as DisputeType
   const outcome = applyRuling(type, ruling, row.o.pricingModel)
   const now = new Date()
-  await db
+  const ruled = await db
     .update(assignment)
     .set({
       status: outcome.status,
@@ -242,7 +242,9 @@ export async function ruleDispute(assignmentId: number, ruling: Ruling, note: st
       // A ruling that overturns a rejection / missing review counts as the acceptance.
       ...(type !== "non_payment" && outcome.status === "approved" ? { reviewedAt: now } : {}),
     })
-    .where(eq(assignment.id, assignmentId))
+    .where(and(eq(assignment.id, assignmentId), eq(assignment.status, "disputed")))
+    .returning({ id: assignment.id })
+  if (ruled.length === 0) return { ok: false as const, error: "This dispute is already resolved" }
 
   if (outcome.status === "approved") await closeOpportunityIfFull(row.o.id, row.o.maxClaims)
 
@@ -297,7 +299,9 @@ export async function reviewSubmission(
       ? Math.min(5, Math.max(1, Math.round(rating)))
       : null
 
-  await db
+  // Compare-and-set on the status we read: a double click or a retried request
+  // finds the row already moved on and stops here, before any payout.
+  const transitioned = await db
     .update(assignment)
     .set({
       status: nextStatus,
@@ -305,7 +309,11 @@ export async function reviewSubmission(
       rating: normalizedRating,
       reviewedAt: new Date(),
     })
-    .where(eq(assignment.id, assignmentId))
+    .where(and(eq(assignment.id, assignmentId), eq(assignment.status, row.status)))
+    .returning({ id: assignment.id })
+  if (transitioned.length === 0) {
+    return { ok: false as const, error: "This delivery was already reviewed" }
+  }
 
   // Pay the agent on approval. settleAssignment is idempotent, so a repeated
   // approval can never double-pay.

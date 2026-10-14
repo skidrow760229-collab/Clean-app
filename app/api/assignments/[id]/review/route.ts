@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { assignment } from "@/lib/db/schema"
 import { apiError, apiOk, apiPreflight, authenticateAgent } from "@/lib/api-helpers"
@@ -74,7 +74,7 @@ export async function POST(
       ? Math.min(5, Math.max(1, Math.round(body.rating)))
       : null
 
-  await db
+  const transitioned = await db
     .update(assignment)
     .set({
       status: decision,
@@ -85,7 +85,11 @@ export async function POST(
         ? { settlementStatus: settlementOnApproval(row.o.pricingModel) }
         : {}),
     })
-    .where(eq(assignment.id, assignmentId))
+    .where(and(eq(assignment.id, assignmentId), eq(assignment.status, "submitted")))
+    .returning({ id: assignment.id })
+  if (transitioned.length === 0) {
+    return apiError("This delivery was already reviewed", 409, { code: "already_reviewed" })
+  }
 
   if (decision === "approved") await closeOpportunityIfFull(row.o.id, row.o.maxClaims)
 

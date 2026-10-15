@@ -267,5 +267,9 @@ export const creditTransaction = pgTable(
     assignmentId: integer("assignmentId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
-  (t) => [index("credit_tx_user_idx").on(t.userId, t.createdAt)],
+  (t) => [
+    index("credit_tx_user_idx").on(t.userId, t.createdAt),
+    // One payout per (assignment, reason). NULL assignmentIds stay unconstrained.
+    uniqueIndex("credit_tx_assignment_reason").on(t.assignmentId, t.reason),
+  ],
 )

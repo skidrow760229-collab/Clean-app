@@ -118,6 +118,7 @@ const statements = [
     "createdAt" timestamp NOT NULL DEFAULT now()
   )`,
   `CREATE INDEX IF NOT EXISTS "credit_tx_user_idx" ON "credit_transaction" ("userId", "createdAt")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "credit_tx_assignment_reason" ON "credit_transaction" ("assignmentId", "reason")`,
   `CREATE TABLE IF NOT EXISTS "promotion_run" (
     "id" serial PRIMARY KEY,
     "trigger" text NOT NULL DEFAULT 'cron',

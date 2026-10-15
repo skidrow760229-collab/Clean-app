@@ -130,8 +130,8 @@ const SLOT_LIST = sql.raw(SLOT_HOLDING.map((s) => `'${s}'`).join(","))
 /** Active claims holding a slot; past-due "claimed" rows free their slot. */
 const ACTIVE_CLAIMS_SQL = sql<number>`(
   select count(*)::int from ${assignment} a
-  where a."opportunityId" = ${opportunity.id}
-    and a.status in (${SLOT_LIST})
+  where a."opportunityId" = "opportunity"."id"
+  and a.status in (${SLOT_LIST})
     and not (a.status = 'claimed' and a."dueAt" is not null and a."dueAt" < now())
 )`
 
@@ -298,8 +298,11 @@ export async function getPublicOpportunity(
 }
 
 /** Active claim count for one opportunity (used to enforce maxClaims). */
-export async function countActiveClaims(opportunityId: number) {
-  const [row] = await db
+export async function countActiveClaims(
+  opportunityId: number,
+  executor: Pick<typeof db, "select"> = db,
+) {
+  const [row] = await executor
     .select({ n: ACTIVE_CLAIMS_SQL })
     .from(opportunity)
     .where(eq(opportunity.id, opportunityId))

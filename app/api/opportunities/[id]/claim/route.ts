@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server"
-import { and, eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
+import { isUniqueViolation } from "@/lib/credits"
 import { db } from "@/lib/db"
 import { assignment, opportunity } from "@/lib/db/schema"
 import {
@@ -55,35 +56,6 @@ export async function POST(
     return apiError("This opportunity's deadline has passed", 409, { code: "deadline_passed" })
   }
 
-  const [existing] = await db
-    .select()
-    .from(assignment)
-    .where(
-      and(
-        eq(assignment.opportunityId, opportunityId),
-        eq(assignment.userId, auth.agent.userId),
-      ),
-    )
-    .limit(1)
-
-  const reclaimable =
-    existing && ["released", "expired"].includes(effectiveStatus(existing))
-
-  if (existing && !reclaimable) {
-    return apiError("You already hold an assignment for this opportunity", 409, {
-      code: "already_claimed",
-      assignment_id: existing.id,
-    })
-  }
-
-  const active = await countActiveClaims(opportunityId)
-  if (active >= opp.maxClaims) {
-    return apiError("All claim slots for this opportunity are taken", 409, {
-      code: "no_slots",
-      max_claims: opp.maxClaims,
-    })
-  }
-
   const contract = parseContract(opp.contract)
   const now = new Date()
   const dueAt = computeDueAt(contract, now)
@@ -102,22 +74,74 @@ export async function POST(
     dueAt,
   }
 
-  let assignmentId: number
-  if (existing) {
-    await db.update(assignment).set(fresh).where(eq(assignment.id, existing.id))
-    assignmentId = existing.id
-  } else {
-    const [row] = await db
-      .insert(assignment)
-      .values({
-        opportunityId,
-        userId: auth.agent.userId,
-        username: auth.agent.username,
-        ...fresh,
+  type Outcome =
+    | { ok: true; assignmentId: number }
+    | { ok: false; code: "already_claimed"; assignmentId: number }
+    | { ok: false; code: "no_slots" }
+
+  let outcome: Outcome
+  try {
+    outcome = await db.transaction(async (tx): Promise<Outcome> => {
+      // Row lock on the opportunity serialises every claim against it, so the
+      // slot count below can't be read by two requests at once.
+      await tx.execute(sql`select id from ${opportunity} where id = ${opportunityId} for update`)
+
+      const [existing] = await tx
+        .select()
+        .from(assignment)
+        .where(
+          and(
+            eq(assignment.opportunityId, opportunityId),
+            eq(assignment.userId, auth.agent.userId),
+          ),
+        )
+        .limit(1)
+
+      const reclaimable =
+        existing && ["released", "expired"].includes(effectiveStatus(existing))
+      if (existing && !reclaimable) {
+        return { ok: false, code: "already_claimed", assignmentId: existing.id }
+      }
+
+      const active = await countActiveClaims(opportunityId, tx)
+      if (active >= opp.maxClaims) return { ok: false, code: "no_slots" }
+
+      if (existing) {
+        await tx.update(assignment).set(fresh).where(eq(assignment.id, existing.id))
+        return { ok: true, assignmentId: existing.id }
+      }
+      const [row] = await tx
+        .insert(assignment)
+        .values({
+          opportunityId,
+          userId: auth.agent.userId,
+          username: auth.agent.username,
+          ...fresh,
+        })
+        .returning({ id: assignment.id })
+      return { ok: true, assignmentId: row.id }
+    })
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return apiError("You already hold an assignment for this opportunity", 409, {
+        code: "already_claimed",
       })
-      .returning({ id: assignment.id })
-    assignmentId = row.id
+    }
+    throw err
   }
+
+  if (!outcome.ok) {
+    return outcome.code === "already_claimed"
+      ? apiError("You already hold an assignment for this opportunity", 409, {
+          code: "already_claimed",
+          assignment_id: outcome.assignmentId,
+        })
+      : apiError("All claim slots for this opportunity are taken", 409, {
+          code: "no_slots",
+          max_claims: opp.maxClaims,
+        })
+  }
+  const assignmentId = outcome.assignmentId
 
   return apiOk(
     {

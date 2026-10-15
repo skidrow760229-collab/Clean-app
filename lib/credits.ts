@@ -45,14 +45,8 @@ export async function recordTransaction(params: {
   assignmentId?: number | null
 }): Promise<number> {
   return db.transaction(async (tx) => {
-    const [prev] = await tx
-      .select({
-        balance: sql<number>`coalesce(sum(${creditTransaction.amount}), 0)::int`,
-      })
-      .from(creditTransaction)
-      .where(eq(creditTransaction.userId, params.userId))
-
-    const balanceAfter = (prev?.balance ?? 0) + params.amount
+    await lockUserLedger(tx, params.userId)
+    const balanceAfter = (await sumBalance(tx, params.userId)) + params.amount
 
     await tx.insert(creditTransaction).values({
       userId: params.userId,
@@ -81,30 +75,64 @@ export async function settleAssignment(params: {
 }): Promise<{ settled: boolean; balance: number }> {
   const reason = "assignment_reward"
 
-  const [existing] = await db
-    .select({ id: creditTransaction.id })
-    .from(creditTransaction)
-    .where(
-      and(
-        eq(creditTransaction.assignmentId, params.assignmentId),
-        eq(creditTransaction.reason, reason),
-      ),
-    )
-    .limit(1)
+  try {
+    return await db.transaction(async (tx) => {
+      await lockUserLedger(tx, params.userId)
 
-  if (existing) {
-    return { settled: false, balance: await getBalance(params.userId) }
+      const [existing] = await tx
+        .select({ id: creditTransaction.id })
+        .from(creditTransaction)
+        .where(
+          and(
+            eq(creditTransaction.assignmentId, params.assignmentId),
+            eq(creditTransaction.reason, reason),
+          ),
+        )
+        .limit(1)
+
+      const prev = await sumBalance(tx, params.userId)
+      if (existing) return { settled: false, balance: prev }
+
+      const balanceAfter = prev + params.amount
+      await tx.insert(creditTransaction).values({
+        userId: params.userId,
+        username: params.username,
+        amount: params.amount,
+        balanceAfter,
+        reason,
+        assignmentId: params.assignmentId,
+      })
+      return { settled: true, balance: balanceAfter }
+    })
+  } catch (err) {
+    // The unique (assignmentId, reason) index is the last line of defence.
+    if (isUniqueViolation(err)) {
+      return { settled: false, balance: await getBalance(params.userId) }
+    }
+    throw err
   }
+}
 
-  const balance = await recordTransaction({
-    userId: params.userId,
-    username: params.username,
-    amount: params.amount,
-    reason,
-    assignmentId: params.assignmentId,
-  })
+type Executor = Pick<typeof db, "select" | "execute">
 
-  return { settled: true, balance }
+/** Serialises every ledger write for one user so balance reads can't go stale. */
+async function lockUserLedger(ex: Executor, userId: string) {
+  await ex.execute(sql`select pg_advisory_xact_lock(hashtext(${"credits:" + userId}))`)
+}
+
+async function sumBalance(ex: Executor, userId: string): Promise<number> {
+  const [row] = await ex
+    .select({
+      balance: sql<number>`coalesce(sum(${creditTransaction.amount}), 0)::int`,
+    })
+    .from(creditTransaction)
+    .where(eq(creditTransaction.userId, userId))
+  return row?.balance ?? 0
+}
+
+export function isUniqueViolation(err: unknown): boolean {
+  const e = err as { code?: string; cause?: { code?: string } } | null
+  return e?.code === "23505" || e?.cause?.code === "23505"
 }
 
 /** Recent ledger entries for a user, newest first. */

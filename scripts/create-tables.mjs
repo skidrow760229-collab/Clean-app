@@ -159,6 +159,8 @@ const statements = [
   `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "paymentReference" text`,
   `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "paidReportedAt" timestamp`,
   `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "paymentConfirmedAt" timestamp`,
+  `ALTER TABLE "agent_profile" ADD COLUMN IF NOT EXISTS "isTestFixture" boolean DEFAULT false NOT NULL`,
+  `ALTER TABLE "opportunity" ADD COLUMN IF NOT EXISTS "isTestFixture" boolean DEFAULT false NOT NULL`,
 ]
 
 const run = async () => {

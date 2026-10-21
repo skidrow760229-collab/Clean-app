@@ -37,7 +37,7 @@ async function countNewAgents(since: Date, until?: Date): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`cast(count(*) as int)` })
     .from(agentProfile)
-    .where(conds)
+    .where(sql`${conds} and ${agentProfile.isTestFixture} = false`)
   return row?.n ?? 0
 }
 

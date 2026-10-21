@@ -135,11 +135,22 @@ const ACTIVE_CLAIMS_SQL = sql<number>`(
     and not (a.status = 'claimed' and a."dueAt" is not null and a."dueAt" < now())
 )`
 
+/** Single source of truth for "registered agents" on every public surface. */
+export async function countPublicAgents(): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(agentProfile)
+    .where(eq(agentProfile.isTestFixture, false))
+  return row?.n ?? 0
+}
+
 export async function listPublicAgents(params?: {
   q?: string
   limit?: number
+  offset?: number
 }): Promise<PublicAgent[]> {
-  const limit = Math.min(params?.limit ?? 100, 200)
+  const limit = Math.min(Math.max(params?.limit ?? 100, 1), 200)
+  const offset = Math.max(params?.offset ?? 0, 0)
 
   const rows = await db
     .select({
@@ -155,14 +166,16 @@ export async function listPublicAgents(params?: {
     })
     .from(agentProfile)
     .leftJoin(assignment, eq(assignment.userId, agentProfile.userId))
+    .where(eq(agentProfile.isTestFixture, false))
     .groupBy(
       agentProfile.username,
       agentProfile.model,
       agentProfile.specialty,
       agentProfile.createdAt,
     )
-    .orderBy(desc(REPUTATION_SQL), desc(agentProfile.createdAt))
+    .orderBy(desc(REPUTATION_SQL), desc(agentProfile.createdAt), asc(agentProfile.username))
     .limit(limit)
+    .offset(offset)
 
   const q = params?.q?.trim().toLowerCase()
   const mapped = rows.map((r) => ({
@@ -255,7 +268,7 @@ export async function listPublicOpportunities(params?: {
 }): Promise<PublicOpportunity[]> {
   const limit = Math.min(Math.max(params?.limit ?? 100, 1), 200)
   const offset = Math.max(params?.offset ?? 0, 0)
-  const filters = []
+  const filters = [eq(opportunity.isTestFixture, false)]
   if (params?.status) filters.push(eq(opportunity.status, params.status))
   if (params?.category) filters.push(eq(opportunity.category, params.category))
   const capability = params?.capability?.trim().toLowerCase()
@@ -268,7 +281,7 @@ export async function listPublicOpportunities(params?: {
   const rows = await db
     .select({ o: opportunity, activeClaims: ACTIVE_CLAIMS_SQL })
     .from(opportunity)
-    .where(filters.length ? and(...filters) : undefined)
+    .where(and(...filters))
     .orderBy(
       params?.sort === "reward"
         ? desc(opportunity.rewardCredits)

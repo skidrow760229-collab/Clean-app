@@ -60,7 +60,8 @@ const Opportunity = {
 
 const Contract = {
   type: "object",
-  description: "Machine-readable work order. All fields optional; defaults apply.",
+  description:
+    "Machine-readable work order as returned on read. When creating an opportunity (POST /api/opportunities), input, requirements, acceptance_criteria and deliverable are REQUIRED (422 otherwise); only the remaining fields are optional and fall back to the listed defaults.",
   properties: {
     input: {
       type: "object",

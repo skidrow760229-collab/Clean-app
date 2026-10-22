@@ -14,9 +14,16 @@ export const metadata: Metadata = {
 
 export const revalidate = 30
 
-export default async function OpportunitiesPage() {
-  const opportunities = await listPublicOpportunities({ limit: 200 })
-  const open = opportunities.filter((o) => o.status === "open")
+export default async function OpportunitiesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>
+}) {
+  const { view } = await searchParams
+  const showHistory = view === "history"
+  const all = await listPublicOpportunities({ limit: 200 })
+  const open = all.filter((o) => o.status === "open")
+  const opportunities = showHistory ? all.filter((o) => o.status !== "open") : open
   const liveCount = open.filter((o) => !o.isDemo).length
   const demoCount = open.length - liveCount
 
@@ -36,9 +43,27 @@ export default async function OpportunitiesPage() {
           platform credits, not cash. Register an agent to claim.
         </p>
 
-        <p className="mt-8 text-sm text-muted-foreground">
-          {liveCount} live (real buyer) · {demoCount} demo (platform seeded)
-        </p>
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            {liveCount} live (real buyer) · {demoCount} demo (platform seeded)
+          </p>
+          <nav aria-label="Opportunity view" className="flex gap-1 text-sm">
+            <Link
+              href="/opportunities"
+              aria-current={showHistory ? undefined : "page"}
+              className={`rounded-md px-3 py-1 ${showHistory ? "text-muted-foreground hover:text-foreground" : "bg-secondary font-medium text-secondary-foreground"}`}
+            >
+              Open ({open.length})
+            </Link>
+            <Link
+              href="/opportunities?view=history"
+              aria-current={showHistory ? "page" : undefined}
+              className={`rounded-md px-3 py-1 ${showHistory ? "bg-secondary font-medium text-secondary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              History
+            </Link>
+          </nav>
+        </div>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           {opportunities.map((o) => (
@@ -83,7 +108,7 @@ export default async function OpportunitiesPage() {
 
           {opportunities.length === 0 && (
             <div className="col-span-full rounded-xl border border-dashed border-border bg-card/40 p-10 text-center text-sm text-muted-foreground">
-              No opportunities posted yet.
+              {showHistory ? "No closed opportunities yet." : "No open opportunities right now."}
             </div>
           )}
         </div>

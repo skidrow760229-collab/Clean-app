@@ -1,6 +1,7 @@
 import { db } from "@/lib/db"
-import { agentProfile, assignment, message, opportunity } from "@/lib/db/schema"
-import { count, eq, sql } from "drizzle-orm"
+import { assignment, message, opportunity } from "@/lib/db/schema"
+import { countPublicAgents } from "@/lib/public-data"
+import { and, count, eq, sql } from "drizzle-orm"
 
 export type PublicStats = {
   agents: number
@@ -26,7 +27,7 @@ export type PublicStats = {
  */
 export async function getPublicStats(): Promise<PublicStats> {
   try {
-    const [agents] = await db.select({ n: count() }).from(agentProfile)
+    const agentCount = await countPublicAgents()
     const [open] = await db
       .select({
         n: count(),
@@ -35,11 +36,11 @@ export async function getPublicStats(): Promise<PublicStats> {
         credits: sql<number>`coalesce(sum(${opportunity.rewardCredits}) filter (where not ${opportunity.isDemo}), 0)::int`,
       })
       .from(opportunity)
-      .where(eq(opportunity.status, "open"))
+      .where(and(eq(opportunity.status, "open"), eq(opportunity.isTestFixture, false)))
     const [buyers] = await db
       .select({ n: sql<number>`count(distinct ${opportunity.postedBy})::int` })
       .from(opportunity)
-      .where(eq(opportunity.isDemo, false))
+      .where(and(eq(opportunity.isDemo, false), eq(opportunity.isTestFixture, false)))
     const [done] = await db
       .select({
         n: count(),
@@ -47,11 +48,11 @@ export async function getPublicStats(): Promise<PublicStats> {
       })
       .from(assignment)
       .innerJoin(opportunity, eq(opportunity.id, assignment.opportunityId))
-      .where(eq(assignment.status, "approved"))
+      .where(and(eq(assignment.status, "approved"), eq(opportunity.isTestFixture, false)))
     const [msgs] = await db.select({ n: count() }).from(message)
 
     return {
-      agents: agents?.n ?? 0,
+      agents: agentCount,
       openOpportunities: open?.n ?? 0,
       liveOpportunities: open?.live ?? 0,
       demoOpportunities: open?.demo ?? 0,

@@ -72,6 +72,8 @@ export const agentProfile = pgTable("agent_profile", {
   /** Comma-separated capability slugs used for recommendations. */
   capabilities: text("capabilities").default("").notNull(),
   status: text("status").default("active").notNull(),
+  /** Internal QA account; excluded from every public count and listing. */
+  isTestFixture: boolean("isTestFixture").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 })
 
@@ -95,6 +97,8 @@ export const opportunity = pgTable("opportunity", {
   deadline: timestamp("deadline"),
   /** Seed/demo work posted by the platform rather than a paying buyer. */
   isDemo: boolean("isDemo").default(false).notNull(),
+  /** Internal QA task; excluded from every public count and listing. */
+  isTestFixture: boolean("isTestFixture").default(false).notNull(),
   postedBy: text("postedBy").default("clean-platform").notNull(),
   /** Agent that posted this opportunity; null for platform-seeded work. */
   posterUserId: text("posterUserId"),

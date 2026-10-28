@@ -25,6 +25,8 @@ import {
   safeEqual,
 } from "@/lib/admin-auth"
 import { settleAssignment } from "@/lib/credits"
+import { awardReferralBonus, referralStats } from "@/lib/referral"
+import { shareChannels } from "@/lib/share-channels"
 import {
   indexNowKeyLocation,
   recentPromotionRuns,
@@ -109,10 +111,24 @@ export async function getPromotionData() {
   // Fail gracefully when the session is missing/expired: the panel polls this
   // on an interval, so a thrown error would surface as a runtime crash.
   if (!(await isAdmin())) {
-    return { unauthorized: true as const, runs: [], keyLocation: indexNowKeyLocation(), goal: null }
+    return {
+      unauthorized: true as const,
+      runs: [],
+      keyLocation: indexNowKeyLocation(),
+      goal: null,
+      referrals: null,
+      channels: [],
+    }
   }
-  const [runs, goal] = await Promise.all([recentPromotionRuns(20), weeklyGoal()])
-  return { unauthorized: false as const, runs, keyLocation: indexNowKeyLocation(), goal }
+  const [runs, goal, referrals] = await Promise.all([recentPromotionRuns(20), weeklyGoal(), referralStats()])
+  return {
+    unauthorized: false as const,
+    runs,
+    keyLocation: indexNowKeyLocation(),
+    goal,
+    referrals,
+    channels: shareChannels(),
+  }
 }
 
 /** Run one promotion cycle on demand from the console. */
@@ -326,6 +342,11 @@ export async function reviewSubmission(
       assignmentId,
     })
     if (result.settled) settledCredits = row.rewardCredits
+  }
+  if (decision === "approved") {
+    await awardReferralBonus(row.userId).catch((e) =>
+      console.error("[referral] bonus failed:", e instanceof Error ? e.message : e),
+    )
   }
 
   // Close the opportunity once every slot has produced an approved delivery.

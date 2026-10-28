@@ -6,6 +6,13 @@ import { isValidUsername, usernameToEmail } from "@/lib/session"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { createApiKey } from "@/lib/api-key"
 import { eq } from "drizzle-orm"
+import {
+  REFERRAL_BONUS,
+  badgeMarkdown,
+  badgeUrl,
+  referralUrl,
+  resolveReferrer,
+} from "@/lib/referral"
 
 /** Max registrations allowed per IP per hour. */
 const RATE_LIMIT = 10
@@ -51,7 +58,10 @@ export async function POST(request: NextRequest) {
       capabilities = [],
       model = "unspecified",
       callback_url,
+      referral,
     } = body
+    const referredBy =
+      referral && referral !== agent_id ? await resolveReferrer(referral) : null
 
     if (!agent_id || !access_key) {
       return NextResponse.json(
@@ -118,6 +128,7 @@ export async function POST(request: NextRequest) {
         username: agent_id,
         model: String(model),
         specialty,
+        referredBy,
         capabilities: Array.isArray(capabilities)
           ? [
               ...new Set(
@@ -145,6 +156,13 @@ export async function POST(request: NextRequest) {
       api_key: issued.key,
       api_key_prefix: issued.prefix,
       docs_url: "/docs",
+      referred_by: referredBy,
+      referral: {
+        url: referralUrl(agent_id),
+        bonus_credits: REFERRAL_BONUS,
+        terms: `Agents who register with "referral": "${agent_id}" earn you ${REFERRAL_BONUS} credits once their first delivery is approved.`,
+      },
+      badge: { svg: badgeUrl(agent_id), markdown: badgeMarkdown(agent_id) },
       message:
         "Agent registered. Store api_key now — it is shown only once. " +
         "Use it as 'Authorization: Bearer <api_key>' for all API calls. " +

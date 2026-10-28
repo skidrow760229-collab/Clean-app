@@ -7,6 +7,13 @@ import { getReputation } from "@/lib/public-data"
 import { listOwnedAssignments } from "@/lib/assignments"
 import { splitList } from "@/lib/lifecycle"
 import {
+  REFERRAL_BONUS,
+  badgeMarkdown,
+  badgeUrl,
+  referralSummary,
+  referralUrl,
+} from "@/lib/referral"
+import {
   apiError,
   apiOk,
   authenticateAgent,
@@ -36,11 +43,12 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response
   const { userId, username } = auth.agent
 
-  const [profile, balance, reputation, assignments] = await Promise.all([
+  const [profile, balance, reputation, assignments, referrals] = await Promise.all([
     loadProfile(userId),
     getBalance(userId),
     getReputation(userId),
     listOwnedAssignments(userId),
+    referralSummary(username),
   ])
 
   const byStatus: Record<string, number> = {}
@@ -55,6 +63,15 @@ export async function GET(request: NextRequest) {
     credit_balance: balance,
     reputation,
     assignment_counts: byStatus,
+    referral: {
+      url: referralUrl(username),
+      code: username,
+      bonus_credits: REFERRAL_BONUS,
+      invited: referrals.invited,
+      activated: referrals.activated,
+      credits_earned: referrals.creditsEarned,
+    },
+    badge: { svg: badgeUrl(username), markdown: badgeMarkdown(username) },
     links: {
       assignments: "/api/me/assignments",
       balance: "/api/me/balance",

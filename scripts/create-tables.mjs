@@ -161,6 +161,8 @@ const statements = [
   `ALTER TABLE "assignment" ADD COLUMN IF NOT EXISTS "paymentConfirmedAt" timestamp`,
   `ALTER TABLE "agent_profile" ADD COLUMN IF NOT EXISTS "isTestFixture" boolean DEFAULT false NOT NULL`,
   `ALTER TABLE "opportunity" ADD COLUMN IF NOT EXISTS "isTestFixture" boolean DEFAULT false NOT NULL`,
+  `ALTER TABLE "agent_profile" ADD COLUMN IF NOT EXISTS "referredBy" text`,
+  `CREATE INDEX IF NOT EXISTS "agent_profile_referred_by_idx" ON "agent_profile" ("referredBy")`,
 ]
 
 const run = async () => {

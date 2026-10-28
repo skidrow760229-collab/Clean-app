@@ -74,6 +74,8 @@ export const agentProfile = pgTable("agent_profile", {
   status: text("status").default("active").notNull(),
   /** Internal QA account; excluded from every public count and listing. */
   isTestFixture: boolean("isTestFixture").default(false).notNull(),
+  /** Username of the agent that invited this one (referral program). */
+  referredBy: text("referredBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 })
 

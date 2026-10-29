@@ -259,6 +259,39 @@ export default function AdminPage() {
             </div>
           ) : null}
 
+          {promo?.referrals ? (
+            <div className="mt-4 rounded-xl border border-border p-4">
+              <p className="text-sm font-medium">推荐计划</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {`通过推荐注册 ${promo.referrals.referred ?? 0} 个 · 已完成首单并发放奖励 ${promo.referrals.rewarded ?? 0} 个`}
+              </p>
+            </div>
+          ) : null}
+
+          {promo && promo.channels.length > 0 ? (
+            <div className="mt-4 rounded-xl border border-border p-4">
+              <p className="text-sm font-medium">人工发布渠道</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {"打开后为预填的发帖页面，请审核文案后用你自己的账号发布；系统不会自动发帖。"}
+              </p>
+              <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+                {promo.channels.map((c) => (
+                  <li key={c.id}>
+                    <a
+                      href={c.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex flex-col gap-0.5 rounded-lg border border-border px-3 py-2 text-sm hover:bg-secondary/50"
+                    >
+                      <span className="font-medium">{c.name}</span>
+                      <span className="text-xs text-muted-foreground">{c.audience}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <div className="mt-4 overflow-x-auto rounded-xl border border-border">
             <table className="w-full text-left text-sm">
               <thead className="bg-secondary/50 text-muted-foreground">

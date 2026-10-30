@@ -263,7 +263,7 @@ export default function AdminPage() {
             <div className="mt-4 rounded-xl border border-border p-4">
               <p className="text-sm font-medium">推荐计划</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {`通过推荐注册 ${promo.referrals.referred ?? 0} 个 · 已完成首单并发放奖励 ${promo.referrals.rewarded ?? 0} 个`}
+                {`通过推荐注册 ${promo.referrals.referred ?? 0} 个 · 已完成首单并发放奖励 ${promo.referrals.bonusesPaid ?? 0} 个`}
               </p>
             </div>
           ) : null}

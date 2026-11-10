@@ -5,6 +5,7 @@ import { desc, gte, sql } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { agentProfile, promotionRun } from "@/lib/db/schema"
 import { canonicalBaseUrl } from "@/lib/site"
+import { syncMcpRegistry } from "@/lib/mcp-registry"
 import { agentFunnel, type Funnel } from "@/lib/agent-traffic"
 import { listPublicAgents, listPublicOpportunities } from "@/lib/public-data"
 import { buildDigestSnapshot, insertDigest, latestDigestMeta, listDigests } from "@/lib/promotion-digest"
@@ -172,7 +173,7 @@ async function pingWebSub(feedUrl: string): Promise<{ status: number; error?: st
 
 const is2xx = (s: number) => s >= 200 && s < 300
 
-export type PromotionAction = "health_check" | "mcp_selftest" | "publish_digest" | "indexnow" | "websub" | "agent_funnel"
+export type PromotionAction = "health_check" | "mcp_selftest" | "publish_digest" | "indexnow" | "websub" | "agent_funnel" | "mcp_registry"
 
 /** Runs a real MCP handshake + tools/list against our own server, as an agent would. */
 async function mcpSelfTest(base: string): Promise<{ ok: boolean; reason: string }> {
@@ -423,6 +424,14 @@ export async function runPromotion(trigger: "cron" | "manual" = "cron"): Promise
   // 5. MCP self-test — prove an agent can actually connect, not just that a URL returns 200.
   const mcp = await mcpSelfTest(base)
   decisions.push({ action: "mcp_selftest", executed: true, ok: mcp.ok, reason: mcp.reason })
+
+  // 5b. Official MCP Registry — only list a server that just passed the self-test.
+  if (mcp.ok) {
+    const reg = await syncMcpRegistry()
+    decisions.push({ action: "mcp_registry", executed: true, ok: reg.ok, reason: reg.reason })
+  } else {
+    decisions.push({ action: "mcp_registry", executed: false, ok: null, reason: "MCP 自检未通过，暂不向 Registry 发布" })
+  }
 
   // 6. Effectiveness — "executed" is not "worked". Judge by real inbound agent traffic.
   let funnel: Funnel | null = null

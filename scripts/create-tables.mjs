@@ -163,6 +163,15 @@ const statements = [
   `ALTER TABLE "opportunity" ADD COLUMN IF NOT EXISTS "isTestFixture" boolean DEFAULT false NOT NULL`,
   `ALTER TABLE "agent_profile" ADD COLUMN IF NOT EXISTS "referredBy" text`,
   `CREATE INDEX IF NOT EXISTS "agent_profile_referred_by_idx" ON "agent_profile" ("referredBy")`,
+  `CREATE TABLE IF NOT EXISTS "agent_hit" (
+    "key" text PRIMARY KEY,
+    "day" text NOT NULL,
+    "surface" text NOT NULL,
+    "client" text NOT NULL,
+    "count" integer NOT NULL DEFAULT 0,
+    "lastAt" timestamp NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS "agent_hit_day_idx" ON "agent_hit" ("day")`,
 ]
 
 const run = async () => {

@@ -5,6 +5,7 @@ import { desc, gte, sql } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { agentProfile, promotionRun } from "@/lib/db/schema"
 import { canonicalBaseUrl } from "@/lib/site"
+import { agentFunnel, type Funnel } from "@/lib/agent-traffic"
 import { listPublicAgents, listPublicOpportunities } from "@/lib/public-data"
 import { buildDigestSnapshot, insertDigest, latestDigestMeta, listDigests } from "@/lib/promotion-digest"
 
@@ -86,8 +87,11 @@ export function promotionUrls(): string[] {
     `${base}/updates`,
     `${base}/feed.xml`,
     `${base}/llms.txt`,
+    `${base}/llms-full.txt`,
     `${base}/openapi.json`,
     `${base}/.well-known/ai-plugin.json`,
+    `${base}/.well-known/agent-card.json`,
+    `${base}/.well-known/mcp.json`,
     `${base}/sitemap.xml`,
   ]
 }
@@ -96,8 +100,12 @@ function discoveryEndpoints(): string[] {
   const base = canonicalBaseUrl()
   return [
     `${base}/llms.txt`,
+    `${base}/llms-full.txt`,
     `${base}/openapi.json`,
     `${base}/.well-known/ai-plugin.json`,
+    `${base}/.well-known/agent-card.json`,
+    `${base}/.well-known/mcp.json`,
+    `${base}/api/mcp`,
     `${base}/robots.txt`,
     `${base}/sitemap.xml`,
     `${base}/feed.xml`,
@@ -164,7 +172,28 @@ async function pingWebSub(feedUrl: string): Promise<{ status: number; error?: st
 
 const is2xx = (s: number) => s >= 200 && s < 300
 
-export type PromotionAction = "health_check" | "publish_digest" | "indexnow" | "websub"
+export type PromotionAction = "health_check" | "mcp_selftest" | "publish_digest" | "indexnow" | "websub" | "agent_funnel"
+
+/** Runs a real MCP handshake + tools/list against our own server, as an agent would. */
+async function mcpSelfTest(base: string): Promise<{ ok: boolean; reason: string }> {
+  try {
+    const call = (body: unknown) =>
+      fetch(`${base}/api/mcp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", "User-Agent": "CleanSelfTest/1.0" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(8000),
+        cache: "no-store",
+      }).then((r) => r.json())
+    const init = await call({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "self", version: "1" } } })
+    const list = await call({ jsonrpc: "2.0", id: 2, method: "tools/list" })
+    const n = list?.result?.tools?.length ?? 0
+    if (!init?.result?.serverInfo || n === 0) return { ok: false, reason: "MCP 握手或 tools/list 失败，agent 无法接入" }
+    return { ok: true, reason: `MCP 握手成功(协议 ${init.result.protocolVersion}),暴露 ${n} 个工具` }
+  } catch (e) {
+    return { ok: false, reason: `MCP 自检异常:${e instanceof Error ? e.message : "失败"}` }
+  }
+}
 
 export type PromotionDecision = {
   action: PromotionAction
@@ -293,7 +322,7 @@ export async function runPromotion(trigger: "cron" | "manual" = "cron"): Promise
       action: "publish_digest",
       executed: false,
       ok: null,
-      reason: "市场数据与上一期简报相同，跳过以避免重复内容",
+      reason: "市场数据与上一期简报��同，跳过以避免重复内容",
     })
   } else {
     const inserted = await insertDigest(today, snapshot.body, snapshot.hash)
@@ -391,11 +420,35 @@ export async function runPromotion(trigger: "cron" | "manual" = "cron"): Promise
     decisions.push({ action: "websub", executed: false, ok: null, reason: "feed 无新条目，无需通知" })
   }
 
-  const ok = decisions.every((d) => d.ok !== false)
+  // 5. MCP self-test — prove an agent can actually connect, not just that a URL returns 200.
+  const mcp = await mcpSelfTest(base)
+  decisions.push({ action: "mcp_selftest", executed: true, ok: mcp.ok, reason: mcp.reason })
+
+  // 6. Effectiveness — "executed" is not "worked". Judge by real inbound agent traffic.
+  let funnel: Funnel | null = null
+  try {
+    funnel = await agentFunnel(7)
+  } catch {
+    funnel = null
+  }
+  if (!funnel) {
+    decisions.push({ action: "agent_funnel", executed: false, ok: null, reason: "访问统计不可用" })
+  } else {
+    const reached = funnel.agentDiscovery + funnel.mcpCalls
+    const reason =
+      reached === 0
+        ? `近 7 天外部 AI agent 访问发现端点 0 次:推广尚未触达任何 agent(浏览器 ${funnel.byClient.browser ?? 0} 次)`
+        : `近 7 天 agent 发现访问 ${funnel.agentDiscovery} 次、MCP 调用 ${funnel.mcpCalls} 次 → 注册尝试 ${funnel.registerAttempts} → 成功 ${funnel.registerSuccess}${funnel.registerSuccess === 0 ? "(有触达但未转化)" : ""}`
+    decisions.push({ action: "agent_funnel", executed: true, ok: reached > 0 && funnel.registerSuccess > 0, reason })
+  }
+
+  // Channel execution failures make the run fail; low reach is reported, not hidden.
+  const ok = decisions.filter((d) => d.action !== "agent_funnel").every((d) => d.ok !== false)
 
   const detail = JSON.stringify({
     mode,
     modeReason,
+    funnel,
     decisions,
     fullSubmit,
     endpoints,

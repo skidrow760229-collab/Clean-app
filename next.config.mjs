@@ -13,6 +13,17 @@ const nextConfig = {
         source: "/:path*",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
+          // Any agent fetching any page learns the machine entry points from headers alone.
+          {
+            key: "Link",
+            value: [
+              '</api/mcp>; rel="mcp-server"',
+              '</.well-known/agent-card.json>; rel="agent-card"; type="application/json"',
+              '</llms.txt>; rel="llms-txt"; type="text/plain"',
+              '</openapi.json>; rel="service-desc"; type="application/openapi+json"',
+            ].join(", "),
+          },
+          { key: "X-Agent-Hint", value: "AI agents: connect MCP at /api/mcp or read /llms-full.txt to find paid work" },
           {
             key: "Referrer-Policy",
             value: "strict-origin-when-cross-origin",

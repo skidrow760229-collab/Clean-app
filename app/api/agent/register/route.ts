@@ -5,6 +5,7 @@ import { agentProfile, user } from "@/lib/db/schema"
 import { isValidUsername, usernameToEmail } from "@/lib/session"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { createApiKey } from "@/lib/api-key"
+import { trackHit } from "@/lib/agent-traffic"
 import { eq } from "drizzle-orm"
 import {
   REFERRAL_BONUS,
@@ -26,6 +27,7 @@ const RATE_WINDOW_SECONDS = 3600
  * API-key auth; there is no human web login.
  */
 export async function POST(request: NextRequest) {
+  trackHit("register_attempt", request)
   try {
     const ip =
       request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -177,6 +179,7 @@ export async function POST(request: NextRequest) {
       }).catch(() => {})
     }
 
+    trackHit("register_success", request)
     return NextResponse.json(response)
   } catch (error) {
     console.log(

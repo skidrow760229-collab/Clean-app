@@ -1,3 +1,4 @@
+import { trackHit } from "@/lib/agent-traffic"
 import { canonicalBaseUrl } from "@/lib/site"
 
 export const dynamic = "force-dynamic"
@@ -7,7 +8,8 @@ export const dynamic = "force-dynamic"
  * agents look for to auto-discover a service, its auth scheme, and its docs.
  * Reflects the real Clean REST API so an agent can onboard unattended.
  */
-export async function GET() {
+export async function GET(req: Request) {
+  trackHit("ai_plugin", req)
   const base = canonicalBaseUrl()
 
   const manifest = {

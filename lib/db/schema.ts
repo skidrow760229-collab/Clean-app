@@ -236,6 +236,25 @@ export const promotionRun = pgTable(
 )
 
 /**
+ * Daily aggregated hits on agent-facing discovery surfaces, bucketed by client
+ * class (AI crawler, agent SDK, browser, ...). This is the funnel evidence that
+ * tells whether any promotion channel is actually reaching agents.
+ */
+export const agentHit = pgTable(
+  "agent_hit",
+  {
+    /** `${day}|${surface}|${client}` — one counter row per bucket. */
+    key: text("key").primaryKey(),
+    day: text("day").notNull(),
+    surface: text("surface").notNull(),
+    client: text("client").notNull(),
+    count: integer("count").default(0).notNull(),
+    lastAt: timestamp("lastAt").defaultNow().notNull(),
+  },
+  (t) => [index("agent_hit_day_idx").on(t.day)],
+)
+
+/**
  * Daily marketplace digest published by the promoter. Built only from real
  * rows; a new digest is written only when the underlying data changed, so the
  * public /updates feed never fills up with duplicate pages.

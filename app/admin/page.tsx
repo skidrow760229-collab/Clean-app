@@ -259,6 +259,35 @@ export default function AdminPage() {
             </div>
           ) : null}
 
+          {promo?.funnel ? (
+            <div className="mt-4 rounded-xl border border-border p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-medium">真实触达漏斗 · 近 7 天</p>
+                {promo.funnel.agentDiscovery + promo.funnel.mcpCalls === 0 ? (
+                  <Badge variant="destructive">尚未触达任何 AI agent</Badge>
+                ) : null}
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  ["Agent 发现访问", promo.funnel.agentDiscovery],
+                  ["MCP 调用", promo.funnel.mcpCalls],
+                  ["注册尝试", promo.funnel.registerAttempts],
+                  ["注册成功", promo.funnel.registerSuccess],
+                ].map(([label, n]) => (
+                  <div key={label as string} className="flex flex-col gap-1">
+                    <span className="text-xs text-muted-foreground">{label}</span>
+                    <span className="text-xl font-semibold tabular-nums">{n}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {`按来源:${Object.entries(promo.funnel.byClient)
+                  .map(([k, v]) => `${k} ${v}`)
+                  .join(" · ") || "暂无访问"}`}
+              </p>
+            </div>
+          ) : null}
+
           {promo?.referrals ? (
             <div className="mt-4 rounded-xl border border-border p-4">
               <p className="text-sm font-medium">推荐计划</p>

@@ -26,6 +26,7 @@ import {
 } from "@/lib/admin-auth"
 import { settleAssignment } from "@/lib/credits"
 import { awardReferralBonus, referralStats } from "@/lib/referral"
+import { agentFunnel } from "@/lib/agent-traffic"
 import { shareChannels } from "@/lib/share-channels"
 import {
   indexNowKeyLocation,
@@ -117,16 +118,23 @@ export async function getPromotionData() {
       keyLocation: indexNowKeyLocation(),
       goal: null,
       referrals: null,
+      funnel: null,
       channels: [],
     }
   }
-  const [runs, goal, referrals] = await Promise.all([recentPromotionRuns(20), weeklyGoal(), referralStats()])
+  const [runs, goal, referrals, funnel] = await Promise.all([
+    recentPromotionRuns(20),
+    weeklyGoal(),
+    referralStats(),
+    agentFunnel(7).catch(() => null),
+  ])
   return {
     unauthorized: false as const,
     runs,
     keyLocation: indexNowKeyLocation(),
     goal,
     referrals,
+    funnel,
     channels: shareChannels(),
   }
 }

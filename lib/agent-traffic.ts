@@ -9,13 +9,26 @@ import { agentHit } from "@/lib/db/schema"
  * Client classes. `self` is our own promotion probe and is never counted as
  * reach; everything else is real inbound traffic.
  */
-export type ClientClass = "ai_crawler" | "ai_assistant" | "agent_sdk" | "search_bot" | "browser" | "other" | "self"
+export type ClientClass =
+  | "ai_crawler"
+  | "ai_assistant"
+  | "agent_sdk"
+  | "probe"
+  | "search_bot"
+  | "browser"
+  | "other"
+  | "self"
 
 const RULES: [ClientClass, RegExp][] = [
   ["self", /CleanPromotionBot|CleanSelfTest/i],
   // Live fetches made on behalf of a user/agent session — the highest-intent signal.
   ["ai_assistant", /ChatGPT-User|Claude-User|Claude-Web|Perplexity-User|MistralAI-User|DuckAssistBot|Gemini-Deep-Research/i],
   ["ai_crawler", /GPTBot|OAI-SearchBot|ClaudeBot|anthropic-ai|PerplexityBot|Google-Extended|CCBot|Bytespider|Amazonbot|Applebot-Extended|meta-externalagent|cohere-ai|YouBot|Diffbot|Timpibot|AI2Bot|PetalBot/i],
+  // MCP directory / liveness monitors: they prove we are listed, but never act as agents.
+  [
+    "probe",
+    /probe|prober|liveness|census|uptime|health|monitor|scann?er|scan\/|audit|indexer|crawler|crawl\/|registry|directory|catalog|verify|checkup|watch|drift|archive|collector|oracle|rank|bench|scoring|tlog|mcp-index|mcpcost|mcptry|mcpwell|[a-z]Bot\/|\+https?:\/\//i,
+  ],
   ["agent_sdk", /python-requests|python-httpx|aiohttp|node-fetch|undici|axios|got\/|curl\/|Wget|Go-http-client|okhttp|openai|langchain|llama.?index|mcp|modelcontextprotocol|claude-code|cursor|^node$|Deno|Bun\//i],
   ["search_bot", /bingbot|Googlebot|YandexBot|Baiduspider|DuckDuckBot|Applebot|SeznamBot|Yeti|Sogou/i],
   ["browser", /Mozilla\/5\.0.*(Chrome|Safari|Firefox|Edg)\//i],
@@ -36,6 +49,9 @@ export type Surface =
   | "ai_plugin"
   | "agent_card"
   | "mcp_manifest"
+  /** initialize / tools/list / ping etc. — connection only, no work done. */
+  | "mcp_handshake"
+  /** tools/call — an agent actually used a tool. */
   | "mcp_call"
   | "agents_json"
   | "opportunities_api"
@@ -47,9 +63,14 @@ export type Surface =
  * un-awaited promise). Never throws: a failed counter must not break a
  * discovery document an agent is reading.
  */
-export function trackHit(surface: Surface, req: Request): void {
+export function trackHit(surface: Surface, req: Request): ClientClass {
   const client = classifyClient(req.headers.get("user-agent"))
-  if (client === "self") return
+  if (client === "self") return client
+  record(surface, client)
+  return client
+}
+
+function record(surface: Surface, client: ClientClass): void {
   try {
     after(() => recordHit(surface, client))
   } catch {
@@ -83,7 +104,12 @@ export type Funnel = {
   agentDiscovery: number
   registerAttempts: number
   registerSuccess: number
+  /** Real tools/call requests (probes excluded). */
   mcpCalls: number
+  /** Real initialize/tools/list connections (probes excluded). */
+  mcpHandshakes: number
+  /** Requests from MCP directory / liveness monitors — evidence of listing, not of use. */
+  directoryProbes: number
 }
 
 const DISCOVERY: Surface[] = ["llms_txt", "llms_full", "openapi", "ai_plugin", "agent_card", "mcp_manifest", "agents_json"]
@@ -105,6 +131,8 @@ export async function agentFunnel(days = 7): Promise<Funnel> {
     registerAttempts: 0,
     registerSuccess: 0,
     mcpCalls: 0,
+    mcpHandshakes: 0,
+    directoryProbes: 0,
   }
   for (const r of rows) {
     funnel.bySurface[r.surface] = (funnel.bySurface[r.surface] ?? 0) + r.n
@@ -114,7 +142,9 @@ export async function agentFunnel(days = 7): Promise<Funnel> {
     }
     if (r.surface === "register_attempt") funnel.registerAttempts += r.n
     if (r.surface === "register_success") funnel.registerSuccess += r.n
-    if (r.surface === "mcp_call") funnel.mcpCalls += r.n
+    if (r.client === "probe") funnel.directoryProbes += r.n
+    else if (r.surface === "mcp_call") funnel.mcpCalls += r.n
+    else if (r.surface === "mcp_handshake") funnel.mcpHandshakes += r.n
   }
   return funnel
 }

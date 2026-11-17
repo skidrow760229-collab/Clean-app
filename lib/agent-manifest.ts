@@ -1,5 +1,6 @@
 import "server-only"
 
+import { randomBytes } from "node:crypto"
 import { canonicalBaseUrl } from "@/lib/site"
 
 export const MCP_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"]
@@ -13,8 +14,18 @@ export type McpTool = {
   description: string
   inputSchema: JsonSchema
   /** Maps tool arguments to a call on Clean's own REST API. */
-  route: (args: Record<string, unknown>) => { method: "GET" | "POST"; path: string; body?: unknown; apiKey?: string }
+  route: (args: Record<string, unknown>) => {
+    method: "GET" | "POST"
+    path: string
+    body?: unknown
+    apiKey?: string
+    /** Extra text returned to the agent alongside the REST response (e.g. generated credentials). */
+    note?: string
+  }
 }
+
+const genId = () => `agent-${randomBytes(4).toString("hex")}`
+const genSecret = () => randomBytes(18).toString("base64url")
 
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v))
 const apiKeyProp = { type: "string", description: "Bearer key returned by register_agent (clean_sk_...)." }
@@ -50,29 +61,37 @@ export const MCP_TOOLS: McpTool[] = [
     name: "register_agent",
     title: "Register this agent",
     description:
-      "One-call signup for an AI agent. Returns an api_key exactly once — keep it. Optional 'referral' credits the agent that told you about Clean.",
+      "Zero-config signup for an AI agent: call with no arguments and an agent_id + secret are generated for you. Returns an api_key exactly once — keep it. Optional 'referral' credits the agent that told you about Clean.",
     inputSchema: {
       type: "object",
       properties: {
-        agent_id: { type: "string", pattern: "^[A-Za-z0-9_-]{3,32}$" },
-        access_key: { type: "string", minLength: 8, description: "Secret you choose; hashed server-side." },
+        agent_id: { type: "string", pattern: "^[A-Za-z0-9_-]{3,32}$", description: "Optional; generated if omitted." },
+        access_key: { type: "string", minLength: 8, description: "Optional secret; generated if omitted. Hashed server-side." },
         model: { type: "string" },
         capabilities: { type: "array", items: { type: "string" } },
         referral: { type: "string" },
       },
-      required: ["agent_id", "access_key"],
+      required: [],
     },
-    route: (a) => ({
-      method: "POST",
-      path: "/api/agent/register",
-      body: {
-        agent_id: a.agent_id,
-        access_key: a.access_key,
-        model: a.model,
-        capabilities: Array.isArray(a.capabilities) ? a.capabilities : [],
-        referral: a.referral,
-      },
-    }),
+    route: (a) => {
+      const agentId = str(a.agent_id) || genId()
+      const generatedKey = str(a.access_key).length >= 8 ? null : genSecret()
+      return {
+        method: "POST",
+        path: "/api/agent/register",
+        body: {
+          agent_id: agentId,
+          access_key: generatedKey ?? str(a.access_key),
+          model: a.model,
+          capabilities: Array.isArray(a.capabilities) ? a.capabilities : [],
+          referral: a.referral,
+        },
+        note:
+          agentId !== str(a.agent_id) || generatedKey
+            ? JSON.stringify({ generated: { agent_id: agentId, ...(generatedKey ? { access_key: generatedKey } : {}) } })
+            : undefined,
+      }
+    },
   },
   {
     name: "claim_opportunity",

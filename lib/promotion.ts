@@ -6,6 +6,7 @@ import { db } from "@/lib/db"
 import { agentProfile, promotionRun } from "@/lib/db/schema"
 import { canonicalBaseUrl } from "@/lib/site"
 import { syncMcpRegistry } from "@/lib/mcp-registry"
+import { checkRateLimit } from "@/lib/rate-limit"
 import { agentFunnel, type Funnel } from "@/lib/agent-traffic"
 import { listPublicAgents, listPublicOpportunities } from "@/lib/public-data"
 import { buildDigestSnapshot, insertDigest, latestDigestMeta, listDigests } from "@/lib/promotion-digest"
@@ -173,7 +174,15 @@ async function pingWebSub(feedUrl: string): Promise<{ status: number; error?: st
 
 const is2xx = (s: number) => s >= 200 && s < 300
 
-export type PromotionAction = "health_check" | "mcp_selftest" | "publish_digest" | "indexnow" | "websub" | "agent_funnel" | "mcp_registry"
+export type PromotionAction =
+  | "health_check"
+  | "mcp_selftest"
+  | "publish_digest"
+  | "indexnow"
+  | "websub"
+  | "agent_funnel"
+  | "mcp_registry"
+  | "wayback"
 
 /** Runs a real MCP handshake + tools/list against our own server, as an agent would. */
 async function mcpSelfTest(base: string): Promise<{ ok: boolean; reason: string }> {
@@ -281,7 +290,35 @@ export type PromotionResult = {
  * changes, weekly goal, last submission outcome), decides which channels to
  * run and why, executes them, and records every decision with its reason.
  */
-export async function runPromotion(trigger: "cron" | "manual" = "cron"): Promise<PromotionResult> {
+/**
+ * Internet Archive "Save Page Now" — anonymous, no account. Archived copies are
+ * a source many LLM training/retrieval pipelines read. SPN can take >20s; a
+ * timeout still means the capture was queued, so it is not treated as failure.
+ */
+async function archiveToWayback(urls: string[]): Promise<{ ok: number; limited: number; failed: number }> {
+  const results = await Promise.all(
+    urls.map(async (u) => {
+      try {
+        const res = await fetch(`https://web.archive.org/save/${u}`, {
+          headers: { "User-Agent": "CleanPromotionBot/1.0" },
+          redirect: "manual",
+          signal: AbortSignal.timeout(20000),
+        })
+        if (res.status === 429) return "limited"
+        return res.status < 400 ? "ok" : "failed"
+      } catch (e) {
+        return e instanceof Error && e.name === "TimeoutError" ? "ok" : "failed"
+      }
+    }),
+  )
+  return {
+    ok: results.filter((r) => r === "ok").length,
+    limited: results.filter((r) => r === "limited").length,
+    failed: results.filter((r) => r === "failed").length,
+  }
+}
+
+export async function runPromotion(trigger: "cron" | "manual" | "traffic" = "cron"): Promise<PromotionResult> {
   const now = Date.now()
   const base = canonicalBaseUrl()
   const decisions: PromotionDecision[] = []
@@ -433,6 +470,22 @@ export async function runPromotion(trigger: "cron" | "manual" = "cron"): Promise
     decisions.push({ action: "mcp_registry", executed: false, ok: null, reason: "MCP 自检未通过，暂不向 Registry 发布" })
   }
 
+  // 5c. Internet Archive — at most once per 24h, anonymous.
+  const waybackGate = await checkRateLimit("promotion", "wayback", 1, 24 * 60 * 60)
+  if (waybackGate.limited) {
+    decisions.push({ action: "wayback", executed: false, ok: null, reason: "24 小时内已存档，跳过" })
+  } else {
+    const targets = [base, `${base}/llms.txt`, `${base}/opportunities`, `${base}/agents`]
+    const wb = await archiveToWayback(targets)
+    decisions.push({
+      action: "wayback",
+      executed: true,
+      // Archive rate limits are external and transient — report, never fail the run.
+      ok: wb.ok > 0 ? true : null,
+      reason: `Internet Archive 存档:成功/排队 ${wb.ok}，限流 ${wb.limited}，失败 ${wb.failed}`,
+    })
+  }
+
   // 6. Effectiveness — "executed" is not "worked". Judge by real inbound agent traffic.
   let funnel: Funnel | null = null
   try {
@@ -443,11 +496,12 @@ export async function runPromotion(trigger: "cron" | "manual" = "cron"): Promise
   if (!funnel) {
     decisions.push({ action: "agent_funnel", executed: false, ok: null, reason: "访问统计不可用" })
   } else {
-    const reached = funnel.agentDiscovery + funnel.mcpCalls
+    const reached = funnel.agentDiscovery + funnel.mcpCalls + funnel.mcpHandshakes
+    const listing = `目录监测探针 ${funnel.directoryProbes} 次(证明已被收录，不计入触达)`
     const reason =
       reached === 0
-        ? `近 7 天外部 AI agent 访问发现端点 0 次:推广尚未触达任何 agent(浏览器 ${funnel.byClient.browser ?? 0} 次)`
-        : `近 7 天 agent 发现访问 ${funnel.agentDiscovery} 次、MCP 调用 ${funnel.mcpCalls} 次 → 注册尝试 ${funnel.registerAttempts} → 成功 ${funnel.registerSuccess}${funnel.registerSuccess === 0 ? "(有触达但未转化)" : ""}`
+        ? `近 7 天真实 agent 触达 0 次;${listing}`
+        : `近 7 天真实 agent:发现访问 ${funnel.agentDiscovery}、MCP 连接 ${funnel.mcpHandshakes}、工具调用 ${funnel.mcpCalls} → 注册尝试 ${funnel.registerAttempts} → 成功 ${funnel.registerSuccess}${funnel.registerSuccess === 0 ? "(有触达但未转化)" : ""};${listing}`
     decisions.push({ action: "agent_funnel", executed: true, ok: reached > 0 && funnel.registerSuccess > 0, reason })
   }
 

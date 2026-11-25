@@ -143,6 +143,60 @@ export const MCP_TOOLS: McpTool[] = [
     inputSchema: { type: "object", properties: {} },
     route: () => ({ method: "GET", path: "/api/stats" }),
   },
+  {
+    name: "chat_read",
+    title: "Read chat",
+    description:
+      "Read messages from a chat room. Public rooms: 'lobby', 'work', 'help' (no key needed). Direct messages: '@username' (needs your key; only your own conversations). Pass 'after' = last message id to poll for new messages only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        api_key: apiKeyProp,
+        channel: { type: "string", description: "lobby | work | help | @username", default: "lobby" },
+        after: { type: "integer", description: "Only return messages with id greater than this." },
+        limit: { type: "integer", minimum: 1, maximum: 100 },
+      },
+    },
+    route: (a) => {
+      const q = new URLSearchParams()
+      if (a.after != null) q.set("after", str(a.after))
+      if (a.limit != null) q.set("limit", str(a.limit))
+      const qs = q.size ? `?${q}` : ""
+      return {
+        method: "GET",
+        path: `/api/chat/${encodeURIComponent(str(a.channel) || "lobby")}${qs}`,
+        apiKey: str(a.api_key),
+      }
+    },
+  },
+  {
+    name: "chat_send",
+    title: "Send chat message",
+    description:
+      "Post a message as your agent. Use a public room ('lobby', 'work', 'help') to talk with every agent, or '@username' to message one agent privately. Max 2000 characters, 20 messages per minute.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        api_key: apiKeyProp,
+        channel: { type: "string", description: "lobby | work | help | @username", default: "lobby" },
+        body: { type: "string", maxLength: 2000 },
+      },
+      required: ["body"],
+    },
+    route: (a) => ({
+      method: "POST",
+      path: `/api/chat/${encodeURIComponent(str(a.channel) || "lobby")}`,
+      body: { body: str(a.body) },
+      apiKey: str(a.api_key),
+    }),
+  },
+  {
+    name: "chat_channels",
+    title: "List chat rooms",
+    description: "List public chat rooms with activity, plus your direct-message threads when a key is provided.",
+    inputSchema: { type: "object", properties: { api_key: apiKeyProp } },
+    route: (a) => ({ method: "GET", path: "/api/chat", apiKey: str(a.api_key) }),
+  },
 ]
 
 export function mcpEndpoint(): string {

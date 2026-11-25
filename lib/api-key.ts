@@ -64,8 +64,9 @@ export async function verifyApiKey(
 
   if (!row) return null
 
-  // Fire-and-forget last-used tracking; never block auth on it.
-  void db
+  // Awaited: serverless drops un-awaited writes once the response is sent,
+  // which left lastUsedAt permanently null and hid agent activation.
+  await db
     .update(apiKey)
     .set({ lastUsedAt: new Date() })
     .where(eq(apiKey.id, row.id))

@@ -2,6 +2,7 @@ import { MCP_PROTOCOL_VERSIONS, MCP_TOOLS, SERVER_INFO, mcpManifest } from "@/li
 import { trackHit } from "@/lib/agent-traffic"
 import { canonicalBaseUrl } from "@/lib/site"
 import { schedulePromotionTick } from "@/lib/promotion-tick"
+import { listPublicOpportunities } from "@/lib/public-data"
 
 export const dynamic = "force-dynamic"
 // Headroom for the occasional traffic-triggered promotion cycle run via after().
@@ -46,6 +47,55 @@ const rpcError = (id: RpcRequest["id"], code: number, message: string) => ({
   error: { code, message },
 })
 
+type OpenWork = { id: number; title: string; reward: string; slots: number }
+let openWorkCache: { at: number; items: OpenWork[] } | null = null
+
+/** Top open work by reward, cached briefly so every handshake can advertise live demand cheaply. */
+async function openWork(): Promise<OpenWork[]> {
+  if (openWorkCache && Date.now() - openWorkCache.at < 60_000) return openWorkCache.items
+  try {
+    const rows = await listPublicOpportunities({ status: "open", sort: "reward", limit: 20 })
+    const items = rows
+      .filter((o) => o.slotsRemaining > 0)
+      .map((o) => ({ id: o.id, title: o.title, reward: o.reward, slots: o.slotsRemaining }))
+    openWorkCache = { at: Date.now(), items }
+    return items
+  } catch {
+    return openWorkCache?.items ?? []
+  }
+}
+
+/** initialize.instructions is injected into the connecting model's context, so it carries live demand. */
+async function liveInstructions(): Promise<string> {
+  const work = await openWork()
+  if (work.length === 0) return INSTRUCTIONS
+  const top = work
+    .slice(0, 3)
+    .map((w) => `#${w.id} "${w.title}" (${w.reward})`)
+    .join("; ")
+  return `${INSTRUCTIONS} Live now: ${work.length} open tasks you can claim, e.g. ${top}.`
+}
+
+/** After signup, hand the agent the exact next call so it does not stall with an unused key. */
+async function nextStepsAfterRegister(responseText: string): Promise<string | null> {
+  let apiKey = ""
+  try {
+    apiKey = String((JSON.parse(responseText) as { api_key?: unknown }).api_key ?? "")
+  } catch {
+    return null
+  }
+  if (!apiKey) return null
+  const work = (await openWork()).slice(0, 3)
+  return JSON.stringify({
+    next_step:
+      work.length > 0
+        ? "You are registered. Claim one of these tasks now, read its contract with get_opportunity, then submit_deliverable."
+        : "You are registered. Call list_opportunities later; new work is posted regularly.",
+    recommended: work,
+    next_call: work[0] ? { tool: "claim_opportunity", arguments: { api_key: apiKey, opportunity_id: work[0].id } } : null,
+  })
+}
+
 async function callTool(req: Request, name: string, args: Record<string, unknown>) {
   const tool = MCP_TOOLS.find((t) => t.name === name)
   if (!tool) return null
@@ -56,7 +106,9 @@ async function callTool(req: Request, name: string, args: Record<string, unknown
   }
   const fwd = req.headers.get("x-forwarded-for")
   if (fwd) headers["x-forwarded-for"] = fwd
-  if (r.apiKey) headers.Authorization = `Bearer ${r.apiKey}`
+  // Many MCP clients configure the key once as a header instead of passing it per call.
+  const bearer = r.apiKey ? `Bearer ${r.apiKey}` : req.headers.get("authorization")
+  if (bearer) headers.Authorization = bearer
 
   try {
     const res = await fetch(new URL(r.path, req.url), {
@@ -69,6 +121,10 @@ async function callTool(req: Request, name: string, args: Record<string, unknown
     const text = await res.text()
     const content = [{ type: "text", text }]
     if (r.note && res.ok) content.push({ type: "text", text: r.note })
+    if (name === "register_agent" && res.ok) {
+      const next = await nextStepsAfterRegister(text)
+      if (next) content.push({ type: "text", text: next })
+    }
     return { content, isError: !res.ok }
   } catch (e) {
     return { content: [{ type: "text", text: `upstream error: ${e instanceof Error ? e.message : "failed"}` }], isError: true }
@@ -87,7 +143,7 @@ async function handle(req: Request, msg: RpcRequest) {
         protocolVersion: MCP_PROTOCOL_VERSIONS.includes(asked) ? asked : MCP_PROTOCOL_VERSIONS[0],
         capabilities: { tools: { listChanged: false }, resources: {}, prompts: {} },
         serverInfo: SERVER_INFO,
-        instructions: INSTRUCTIONS,
+        instructions: await liveInstructions(),
       })
     }
     // Non-standard discovery call used by several MCP directories; answer instead of erroring.

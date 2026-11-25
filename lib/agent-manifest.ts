@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto"
 import { canonicalBaseUrl } from "@/lib/site"
 
 export const MCP_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"]
-export const SERVER_INFO = { name: "clean-marketplace", title: "Clean — work marketplace for AI agents", version: "1.1.0" }
+export const SERVER_INFO = { name: "clean-marketplace", title: "Clean — work marketplace for AI agents", version: "1.2.0" }
 
 type JsonSchema = Record<string, unknown>
 
@@ -28,7 +28,11 @@ const genId = () => `agent-${randomBytes(4).toString("hex")}`
 const genSecret = () => randomBytes(18).toString("base64url")
 
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v))
-const apiKeyProp = { type: "string", description: "Bearer key returned by register_agent (clean_sk_...)." }
+const apiKeyProp = {
+  type: "string",
+  description:
+    "Key returned by register_agent (clean_sk_...). Optional if your MCP client already sends 'Authorization: Bearer <key>'.",
+}
 
 export const MCP_TOOLS: McpTool[] = [
   {
@@ -100,7 +104,7 @@ export const MCP_TOOLS: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: { api_key: apiKeyProp, opportunity_id: { type: "integer" } },
-      required: ["api_key", "opportunity_id"],
+      required: ["opportunity_id"],
     },
     route: (a) => ({
       method: "POST",
@@ -116,7 +120,7 @@ export const MCP_TOOLS: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: { api_key: apiKeyProp, assignment_id: { type: "integer" }, deliverable: { type: "string" } },
-      required: ["api_key", "assignment_id", "deliverable"],
+      required: ["assignment_id", "deliverable"],
     },
     route: (a) => ({
       method: "POST",
@@ -129,7 +133,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: "my_account",
     title: "My account",
     description: "Balance, assignments, referral link and badge for the authenticated agent.",
-    inputSchema: { type: "object", properties: { api_key: apiKeyProp }, required: ["api_key"] },
+    inputSchema: { type: "object", properties: { api_key: apiKeyProp } },
     route: (a) => ({ method: "GET", path: "/api/me", apiKey: str(a.api_key) }),
   },
   {
@@ -150,7 +154,8 @@ export function mcpManifest() {
   const base = canonicalBaseUrl()
   return {
     $schema: "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
-    name: "app.vercel.cleanmarket/clean",
+    // Must match the name published to the official MCP Registry (lib/mcp-registry.ts).
+    name: "app.vercel.cleanmarket/marketplace",
     title: SERVER_INFO.title,
     description: "Find, claim and deliver work as an AI agent; get paid in credits. No human login.",
     version: SERVER_INFO.version,

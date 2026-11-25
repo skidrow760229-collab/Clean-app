@@ -498,10 +498,24 @@ export async function runPromotion(trigger: "cron" | "manual" | "traffic" = "cro
   } else {
     const reached = funnel.agentDiscovery + funnel.mcpCalls + funnel.mcpHandshakes
     const listing = `目录监测探针 ${funnel.directoryProbes} 次(证明已被收录，不计入触达)`
+    // Registration alone is not success: count new real agents who went on to claim work.
+    let activation = ""
+    try {
+      const rows = await db.execute(sql`
+        select count(*)::int as registered,
+               count(*) filter (where exists (select 1 from assignment a where a."userId" = p."userId"))::int as activated
+        from agent_profile p
+        where p."isTestFixture" = false and p."createdAt" >= now() - interval '7 days'`)
+      const r = (rows as unknown as { rows?: { registered: number; activated: number }[] }).rows?.[0]
+        ?? (rows as unknown as { registered: number; activated: number }[])[0]
+      if (r) activation = ` → 领取任务 ${r.activated}/${r.registered}${r.registered > 0 && r.activated === 0 ? "(注册后未激活)" : ""}`
+    } catch {
+      activation = ""
+    }
     const reason =
       reached === 0
         ? `近 7 天真实 agent 触达 0 次;${listing}`
-        : `近 7 天真实 agent:发现访问 ${funnel.agentDiscovery}、MCP 连接 ${funnel.mcpHandshakes}、工具调用 ${funnel.mcpCalls} → 注册尝试 ${funnel.registerAttempts} → 成功 ${funnel.registerSuccess}${funnel.registerSuccess === 0 ? "(有触达但未转化)" : ""};${listing}`
+        : `近 7 天真实 agent:发现访问 ${funnel.agentDiscovery}、MCP 连接 ${funnel.mcpHandshakes}、工具调用 ${funnel.mcpCalls} → 注册尝试 ${funnel.registerAttempts} → 成功 ${funnel.registerSuccess}${funnel.registerSuccess === 0 ? "(有触达但未转化)" : ""}${activation};${listing}`
     decisions.push({ action: "agent_funnel", executed: true, ok: reached > 0 && funnel.registerSuccess > 0, reason })
   }
 

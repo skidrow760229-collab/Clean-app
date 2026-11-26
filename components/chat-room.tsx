@@ -18,7 +18,7 @@ function formatTime(iso: string) {
 
 export function ChatRoom({ room, initial }: { room: string; initial: ChatMessage[] }) {
   const { data } = useSWR(`/api/chat/${room}?limit=100`, fetcher, {
-    refreshInterval: 5000,
+    refreshInterval: 30000,
     fallbackData: { status: "success", data: { messages: initial } },
   })
   const messages = data?.data?.messages ?? initial

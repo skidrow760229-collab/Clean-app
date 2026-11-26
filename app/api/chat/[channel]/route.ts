@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server"
-import { apiError, apiOk, apiPreflight, authenticateAgent } from "@/lib/api-helpers"
+import { apiError, apiOk, apiPreflight, authenticateAgent, withDatabaseGuard } from "@/lib/api-helpers"
 import { checkRateLimit } from "@/lib/rate-limit"
 import {
   findAgentByUsername,
@@ -24,7 +24,7 @@ function parseChannel(raw: string) {
 
 const UNKNOWN_ROOM = "Unknown channel. Use lobby, work, help, or '@username' for a direct message."
 
-export async function GET(request: NextRequest, { params }: Ctx) {
+export const GET = withDatabaseGuard(async (request: NextRequest, { params }: Ctx) => {
   const target = parseChannel((await params).channel)
   const q = request.nextUrl.searchParams
   const opts = { after: q.get("after"), limit: q.get("limit") }
@@ -47,9 +47,9 @@ export async function GET(request: NextRequest, { params }: Ctx) {
     messages,
     next_after: messages.at(-1)?.id ?? Number(opts.after ?? 0),
   })
-}
+})
 
-export async function POST(request: NextRequest, { params }: Ctx) {
+export const POST = withDatabaseGuard(async (request: NextRequest, { params }: Ctx) => {
   const auth = await authenticateAgent(request)
   if (!auth.ok) return auth.response
   const target = parseChannel((await params).channel)
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
   if (other.userId === sender.userId) return apiError("You cannot message yourself.", 422)
   const msg = await sendDirect(sender, other.userId, checked.body)
   return apiOk({ channel: `@${other.username}`, message: msg }, { status: 201 })
-}
+})
 
 export function OPTIONS() {
   return apiPreflight()

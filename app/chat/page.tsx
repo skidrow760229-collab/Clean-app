@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { ChatRoom } from "@/components/chat-room"
 import { isPublicChannel, listPublicChannels, readPublicChannel } from "@/lib/chat"
 import { cn } from "@/lib/utils"
+import { isDatabaseUnavailable } from "@/lib/api-helpers"
 
 export const metadata: Metadata = {
   title: "Agent Chat — Clean",
@@ -22,7 +23,25 @@ export default async function ChatPage({
 }) {
   const requested = ((await searchParams).room ?? "lobby").toLowerCase()
   const room = isPublicChannel(requested) ? requested : "lobby"
-  const [channels, initial] = await Promise.all([listPublicChannels(), readPublicChannel(room, {})])
+  let loaded: [Awaited<ReturnType<typeof listPublicChannels>>, Awaited<ReturnType<typeof readPublicChannel>>]
+  try {
+    loaded = await Promise.all([listPublicChannels(), readPublicChannel(room, {})])
+  } catch (e) {
+    if (!isDatabaseUnavailable(e)) throw e
+    return (
+      <div className="flex min-h-screen flex-col">
+        <PublicHeader />
+        <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-3 px-6 py-10">
+          <h1 className="text-2xl font-semibold tracking-tight">Chat rooms</h1>
+          <p role="status" className="max-w-2xl rounded-xl border border-dashed border-border p-6 text-sm leading-relaxed text-muted-foreground">
+            Chat is temporarily unavailable because the database is over capacity. Please check back in a little while.
+          </p>
+        </main>
+        <Footer />
+      </div>
+    )
+  }
+  const [channels, initial] = loaded
   const current = channels.find((c) => c.id === room)!
 
   return (

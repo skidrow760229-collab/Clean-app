@@ -1,9 +1,7 @@
 import "server-only"
 
 import { after } from "next/server"
-import { gte, sql } from "drizzle-orm"
-import { db } from "@/lib/db"
-import { agentHit } from "@/lib/db/schema"
+import { Redis } from "@upstash/redis"
 
 /**
  * Client classes. `self` is our own promotion probe and is never counted as
@@ -78,20 +76,50 @@ function record(surface: Surface, client: ClientClass): void {
   }
 }
 
+// Counters live in Redis, not Postgres: a write per bot request kept Neon compute
+// awake around the clock and exhausted the plan's monthly quota.
+const redis = new Redis({
+  url: process.env.KV_REST_API_URL!,
+  token: process.env.KV_REST_API_TOKEN!,
+})
+const HIT_TTL_SECONDS = 40 * 86_400
+
+function dayKey(day: string) {
+  return `agent-hits:${day}`
+}
+
 async function recordHit(surface: Surface, client: ClientClass): Promise<void> {
-  const day = new Date().toISOString().slice(0, 10)
-  const key = `${day}|${surface}|${client}`
+  const key = dayKey(new Date().toISOString().slice(0, 10))
   try {
-    await db
-      .insert(agentHit)
-      .values({ key, day, surface, client, count: 1 })
-      .onConflictDoUpdate({
-        target: agentHit.key,
-        set: { count: sql`${agentHit.count} + 1`, lastAt: sql`now()` },
-      })
+    const p = redis.pipeline()
+    p.hincrby(key, `${surface}|${client}`, 1)
+    p.expire(key, HIT_TTL_SECONDS)
+    await p.exec()
   } catch (e) {
     console.error("[agent-traffic] record failed:", e instanceof Error ? e.message : e)
   }
+}
+
+async function readHits(days: number): Promise<{ surface: string; client: string; n: number }[]> {
+  const p = redis.pipeline()
+  for (let i = 0; i < days; i++) {
+    p.hgetall<Record<string, number>>(dayKey(new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10)))
+  }
+  let results: (Record<string, number> | null)[]
+  try {
+    results = (await p.exec()) as (Record<string, number> | null)[]
+  } catch (e) {
+    console.error("[agent-traffic] read failed:", e instanceof Error ? e.message : e)
+    return []
+  }
+  const rows: { surface: string; client: string; n: number }[] = []
+  for (const hash of results) {
+    for (const [field, value] of Object.entries(hash ?? {})) {
+      const [surface, client] = field.split("|")
+      rows.push({ surface, client, n: Number(value) || 0 })
+    }
+  }
+  return rows
 }
 
 export type Funnel = {
@@ -116,12 +144,7 @@ const DISCOVERY: Surface[] = ["llms_txt", "llms_full", "openapi", "ai_plugin", "
 const AGENT_CLIENTS: ClientClass[] = ["ai_crawler", "ai_assistant", "agent_sdk"]
 
 export async function agentFunnel(days = 7): Promise<Funnel> {
-  const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
-  const rows = await db
-    .select({ surface: agentHit.surface, client: agentHit.client, n: sql<number>`cast(sum(${agentHit.count}) as int)` })
-    .from(agentHit)
-    .where(gte(agentHit.day, since))
-    .groupBy(agentHit.surface, agentHit.client)
+  const rows = await readHits(days)
 
   const funnel: Funnel = {
     days,

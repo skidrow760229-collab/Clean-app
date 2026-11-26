@@ -4,6 +4,7 @@ import { PublicHeader } from "@/components/public-header"
 import { Footer } from "@/components/brand"
 import { Badge } from "@/components/ui/badge"
 import { listPublicAgents } from "@/lib/public-data"
+import { queryOrFallback } from "@/lib/api-helpers"
 import { Cpu, Star, CheckCircle2 } from "lucide-react"
 
 export const metadata: Metadata = {
@@ -16,7 +17,10 @@ export const metadata: Metadata = {
 export const revalidate = 30
 
 export default async function AgentsPage() {
-  const agents = await listPublicAgents({ limit: 200 })
+  const { data: agents, unavailable } = await queryOrFallback(
+    () => listPublicAgents({ limit: 200 }),
+    [] as Awaited<ReturnType<typeof listPublicAgents>>,
+  )
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -33,9 +37,15 @@ export default async function AgentsPage() {
           approved deliveries. No login required.
         </p>
 
-        <p className="mt-8 text-sm text-muted-foreground">
-          {agents.length} agent{agents.length === 1 ? "" : "s"} registered
-        </p>
+        {unavailable ? (
+          <p role="status" className="mt-8 rounded-xl border border-dashed border-border p-6 text-sm text-muted-foreground">
+            The directory is temporarily unavailable. Please check back shortly.
+          </p>
+        ) : (
+          <p className="mt-8 text-sm text-muted-foreground">
+            {agents.length} agent{agents.length === 1 ? "" : "s"} registered
+          </p>
+        )}
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {agents.map((a) => (

@@ -4,6 +4,7 @@ import { PublicHeader } from "@/components/public-header"
 import { Footer } from "@/components/brand"
 import { Badge } from "@/components/ui/badge"
 import { listDigests } from "@/lib/promotion-digest"
+import { queryOrFallback } from "@/lib/api-helpers"
 import { ArrowRight, Rss } from "lucide-react"
 
 export const metadata: Metadata = {
@@ -15,7 +16,10 @@ export const metadata: Metadata = {
 export const revalidate = 300
 
 export default async function UpdatesPage() {
-  const digests = await listDigests(60)
+  const { data: digests, unavailable } = await queryOrFallback(
+    () => listDigests(60),
+    [] as Awaited<ReturnType<typeof listDigests>>,
+  )
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -39,7 +43,9 @@ export default async function UpdatesPage() {
         </p>
 
         {digests.length === 0 ? (
-          <p className="mt-10 text-sm text-muted-foreground">No updates published yet.</p>
+          <p role={unavailable ? "status" : undefined} className="mt-10 text-sm text-muted-foreground">
+            {unavailable ? "Updates are temporarily unavailable. Please check back shortly." : "No updates published yet."}
+          </p>
         ) : (
           <ul className="mt-8 flex flex-col gap-3">
             {digests.map((d) => (

@@ -27,6 +27,38 @@ export function apiError(
   )
 }
 
+/** Neon rejects every query with SQLSTATE 53000 once the plan's quota is used up. */
+export function isDatabaseUnavailable(e: unknown): boolean {
+  for (let cur: unknown = e, depth = 0; cur && depth < 4; depth++) {
+    const err = cur as { code?: unknown; message?: unknown; cause?: unknown }
+    if (err.code === "53000" || (typeof err.message === "string" && err.message.includes("exceeded the quota"))) {
+      return true
+    }
+    cur = err.cause
+  }
+  return false
+}
+
+export function databaseUnavailableResponse() {
+  return apiError("Service temporarily unavailable: the database is over capacity. Retry in about an hour.", 503, {
+    code: "database_unavailable",
+    retry_after_seconds: 3600,
+  })
+}
+
+/** Turns a database-capacity failure into a clear 503 instead of an opaque 500. */
+export function withDatabaseGuard<A extends unknown[]>(handler: (...args: A) => Promise<Response>) {
+  return async (...args: A): Promise<Response> => {
+    try {
+      return await handler(...args)
+    } catch (e) {
+      if (!isDatabaseUnavailable(e)) throw e
+      console.error("[db] unavailable:", e instanceof Error ? e.message : e)
+      return databaseUnavailableResponse()
+    }
+  }
+}
+
 /** Preflight handler shared by all API routes. */
 export function apiPreflight() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })

@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server"
-import { apiError, apiOk, apiPreflight } from "@/lib/api-helpers"
+import { apiError, apiOk, apiPreflight, withDatabaseGuard } from "@/lib/api-helpers"
 import { extractBearer, verifyApiKey } from "@/lib/api-key"
 import { listDirectConversations, listPublicChannels, MAX_BODY } from "@/lib/chat"
 
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic"
 /**
  * GET /api/chat — public rooms, plus the caller's DM threads when a key is sent.
  */
-export async function GET(request: NextRequest) {
+export const GET = withDatabaseGuard(async (request: NextRequest) => {
   const channels = await listPublicChannels()
   const token = extractBearer(request)
   let direct: Awaited<ReturnType<typeof listDirectConversations>> | undefined
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
       max_body_chars: MAX_BODY,
     },
   })
-}
+})
 
 export function OPTIONS() {
   return apiPreflight()

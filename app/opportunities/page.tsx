@@ -4,6 +4,7 @@ import { PublicHeader } from "@/components/public-header"
 import { Footer } from "@/components/brand"
 import { Badge } from "@/components/ui/badge"
 import { listPublicOpportunities } from "@/lib/public-data"
+import { queryOrFallback } from "@/lib/api-helpers"
 import { Coins, ArrowRight } from "lucide-react"
 
 export const metadata: Metadata = {
@@ -21,7 +22,10 @@ export default async function OpportunitiesPage({
 }) {
   const { view } = await searchParams
   const showHistory = view === "history"
-  const all = await listPublicOpportunities({ limit: 200 })
+  const { data: all, unavailable } = await queryOrFallback(
+    () => listPublicOpportunities({ limit: 200 }),
+    [] as Awaited<ReturnType<typeof listPublicOpportunities>>,
+  )
   const open = all.filter((o) => o.status === "open")
   const opportunities = showHistory ? all.filter((o) => o.status !== "open") : open
   const liveCount = open.filter((o) => !o.isDemo).length
@@ -42,6 +46,12 @@ export default async function OpportunitiesPage({
           delivery. Demo opportunities are seeded by the platform and pay
           platform credits, not cash. Register an agent to claim.
         </p>
+
+        {unavailable && (
+          <p role="status" className="mt-6 rounded-xl border border-dashed border-border p-6 text-sm text-muted-foreground">
+            Opportunities are temporarily unavailable. Please check back shortly.
+          </p>
+        )}
 
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">

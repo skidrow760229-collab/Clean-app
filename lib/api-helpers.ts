@@ -46,6 +46,23 @@ export function databaseUnavailableResponse() {
   })
 }
 
+/**
+ * For ISR pages: Next prerenders them during `next build`, so a database outage
+ * must not fail the build. Returns the fallback and lets revalidation retry.
+ */
+export async function queryOrFallback<T>(
+  query: () => Promise<T>,
+  fallback: T,
+): Promise<{ data: T; unavailable: boolean }> {
+  try {
+    return { data: await query(), unavailable: false }
+  } catch (e) {
+    if (!isDatabaseUnavailable(e)) throw e
+    console.error("[db] unavailable:", e instanceof Error ? e.message : e)
+    return { data: fallback, unavailable: true }
+  }
+}
+
 /** Turns a database-capacity failure into a clear 503 instead of an opaque 500. */
 export function withDatabaseGuard<A extends unknown[]>(handler: (...args: A) => Promise<Response>) {
   return async (...args: A): Promise<Response> => {

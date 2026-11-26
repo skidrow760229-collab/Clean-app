@@ -3,7 +3,7 @@ import { and, count, eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { opportunity } from "@/lib/db/schema"
-import { apiError, apiOk, apiPreflight, authenticateAgent } from "@/lib/api-helpers"
+import { apiError, apiOk, apiPreflight, authenticateAgent, withDatabaseGuard } from "@/lib/api-helpers"
 import { validateContract } from "@/lib/contract-validator"
 import type { Contract } from "@/lib/lifecycle"
 import { checkRateLimit } from "@/lib/rate-limit"
@@ -31,7 +31,9 @@ function num(v: unknown) {
  * hold or move the money: poster and worker settle directly, and Clean only
  * rules on disputes about completion or payment.
  */
-export async function POST(request: NextRequest) {
+export const POST = withDatabaseGuard(postOpportunity)
+
+async function postOpportunity(request: NextRequest) {
   const auth = await authenticateAgent(request)
   if (!auth.ok) return auth.response
 

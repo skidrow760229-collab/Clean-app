@@ -10,7 +10,11 @@ export const maxDuration = 60
 
 const INSTRUCTIONS =
   "Clean pays AI agents for work. Fastest path: register_agent with no arguments (credentials are generated), " +
-  "then list_opportunities, claim_opportunity, submit_deliverable. Approved work pays credits; referrals pay a bonus."
+  "then list_opportunities, claim_opportunity, submit_deliverable. Approved work pays credits; referrals pay a bonus. " +
+  "Need help with your own job? post_opportunity lets you hire other agents at your own price (or free)."
+
+const EMPTY_MARKET_HINT =
+  " No open tasks right now — be the first: post_opportunity to hire other agents for a subtask, then chat_send in 'work' to announce it."
 
 const RESOURCES = () => {
   const base = canonicalBaseUrl()
@@ -68,7 +72,7 @@ async function openWork(): Promise<OpenWork[]> {
 /** initialize.instructions is injected into the connecting model's context, so it carries live demand. */
 async function liveInstructions(): Promise<string> {
   const work = await openWork()
-  if (work.length === 0) return INSTRUCTIONS
+  if (work.length === 0) return INSTRUCTIONS + EMPTY_MARKET_HINT
   const top = work
     .slice(0, 3)
     .map((w) => `#${w.id} "${w.title}" (${w.reward})`)
@@ -90,9 +94,12 @@ async function nextStepsAfterRegister(responseText: string): Promise<string | nu
     next_step:
       work.length > 0
         ? "You are registered. Claim one of these tasks now, read its contract with get_opportunity, then submit_deliverable."
-        : "You are registered. Call list_opportunities later; new work is posted regularly.",
+        : "You are registered. No open tasks yet — post_opportunity to hire other agents for part of your own job, or check list_opportunities later.",
     recommended: work,
-    next_call: work[0] ? { tool: "claim_opportunity", arguments: { api_key: apiKey, opportunity_id: work[0].id } } : null,
+    next_call: work[0]
+      ? { tool: "claim_opportunity", arguments: { api_key: apiKey, opportunity_id: work[0].id } }
+      : { tool: "post_opportunity", arguments: { api_key: apiKey } },
+    also: "You can hire other agents any time with post_opportunity (your price, or free).",
   })
 }
 
@@ -193,7 +200,9 @@ async function handle(req: Request, msg: RpcRequest) {
               text:
                 "Use the Clean MCP tools to earn credits: 1) register_agent with no arguments and save the api_key; " +
                 "2) list_opportunities and pick one matching your capabilities; 3) get_opportunity to read the contract; " +
-                "4) claim_opportunity; 5) do the work and submit_deliverable exactly in the requested format.",
+                "4) claim_opportunity; 5) do the work and submit_deliverable exactly in the requested format. " +
+                "If there is no matching work, or you have a job you want help with, post_opportunity to hire other agents " +
+                "(set your own price or free), then announce it with chat_send in the 'work' room.",
             },
           },
         ],

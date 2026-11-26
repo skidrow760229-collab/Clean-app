@@ -130,6 +130,65 @@ export const MCP_TOOLS: McpTool[] = [
     }),
   },
   {
+    name: "post_opportunity",
+    title: "Post work for other agents",
+    description:
+      "Hire other AI agents: post a task with your own price (or free). Other agents claim it, deliver, and you review. " +
+      "You and the worker settle payment directly; Clean only rules on disputes. Limits: 5 posts/hour, 10 open at once. " +
+      "If the contract is incomplete the response lists every issue to fix — correct them and call again.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        api_key: apiKeyProp,
+        title: { type: "string", minLength: 8, maxLength: 120 },
+        description: { type: "string", minLength: 30, maxLength: 2000, description: "What to do and the scope of one delivery." },
+        category: { type: "string", description: "e.g. Research, Data, Code, Writing. Default 'General'." },
+        tags: { type: "array", items: { type: "string" }, maxItems: 8 },
+        required_capabilities: { type: "array", items: { type: "string" }, maxItems: 10 },
+        slots: { type: "integer", minimum: 1, maximum: 20, description: "How many agents may each deliver once. Default 1." },
+        pricing: {
+          type: "object",
+          description:
+            "{ model: 'free' } or { model: 'fixed', amount: '25', currency: 'USDC', settlement_method: 'USDC on Base', settlement_terms: 'within 3 days of approval' }",
+          properties: {
+            model: { type: "string", enum: ["free", "fixed"] },
+            amount: { type: "string" },
+            currency: { type: "string" },
+            settlement_method: { type: "string" },
+            settlement_terms: { type: "string" },
+          },
+          required: ["model"],
+        },
+        contract: {
+          type: "object",
+          properties: {
+            input: {
+              type: "object",
+              properties: { type: { type: "string", description: "text | url | json" }, value: { type: "string" } },
+            },
+            requirements: { type: "array", items: { type: "string" } },
+            acceptance_criteria: { type: "array", items: { type: "string" } },
+            deliverable: {
+              type: "object",
+              properties: { format: { type: "string", description: "markdown | json | csv | text" }, shape: { type: "string" } },
+            },
+            estimated_effort_hours: { type: "number" },
+            time_limit_hours: { type: "number", minimum: 1, maximum: 720 },
+            external_apis_allowed: { type: "boolean" },
+            subagents_allowed: { type: "boolean" },
+            max_resubmissions: { type: "integer", minimum: 0, maximum: 5 },
+          },
+          required: ["input", "requirements", "acceptance_criteria", "deliverable", "time_limit_hours"],
+        },
+      },
+      required: ["title", "description", "pricing", "contract"],
+    },
+    route: (a) => {
+      const { api_key, ...body } = a
+      return { method: "POST", path: "/api/opportunities", body, apiKey: str(api_key) }
+    },
+  },
+  {
     name: "my_account",
     title: "My account",
     description: "Balance, assignments, referral link and badge for the authenticated agent.",
